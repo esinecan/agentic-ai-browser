@@ -1,0 +1,12 @@
+version: "3"
+services:
+  web-scraper:
+    build: .
+    container_name: playwright-bot
+    environment:
+      - NODE_ENV=production
+      - HEADLESS=true
+    volumes:
+      - ./logs:/app/logs
+      - ./screenshots:/app/screenshots
+    restart: unless-stopped
