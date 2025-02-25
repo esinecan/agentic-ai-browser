@@ -1,5 +1,7 @@
 import { launchBrowser, createPage, getPageState, verifyAction, GraphContext } from "./browserExecutor.js";
 import { generateNextAction } from "./llmProcessorOllama.js";
+import { Page, ElementHandle } from 'playwright';
+import { Action, doRetry } from './browserExecutor.js';
 
 const MAX_RETRIES = 3;
 

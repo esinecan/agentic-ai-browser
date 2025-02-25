@@ -49,7 +49,7 @@ export async function createPage(browser: Browser): Promise<Page> {
 }
 
 // Simple manual retry function.
-async function doRetry<T>(
+export async function doRetry<T>(
   fn: () => Promise<T>,
   retries: number = 2,
   delayMs: number = 1000
@@ -69,23 +69,30 @@ async function doRetry<T>(
 
 // Helper: Get an element based on the action's selector.
 export async function getElement(
-  page: Page,
-  action: Action
-): Promise<ElementHandle | null> {
-  return doRetry(async () => {
-    const options = { timeout: action.maxWait };
-    switch (action.selectorType) {
-      case "css":
-        return page.$(action.element!, options);
-      case "xpath":
-        return page.$(`xpath=${action.element}`, options);
-      case "text":
-        return page.$(`text=${action.element}`, options);
-      default:
-        throw new Error(`Invalid selector type: ${action.selectorType}`);
-    }
-  }, 2);
-}
+    page: Page,
+    action: Action
+  ): Promise<ElementHandle | null> {
+    return doRetry(async () => {
+      if (!action.element) return null;
+  
+      switch (action.selectorType) {
+        case "css":
+          await page.waitForSelector(action.element, { timeout: action.maxWait });
+          return page.$(action.element);
+  
+        case "xpath":
+          await page.waitForSelector(`xpath=${action.element}`, { timeout: action.maxWait });
+          return page.$(`xpath=${action.element}`);
+  
+        case "text":
+          await page.waitForSelector(`text=${action.element}`, { timeout: action.maxWait });
+          return page.$(`text=${action.element}`);
+  
+        default:
+          throw new Error(`Invalid selector type: ${action.selectorType}`);
+      }
+    }, 2);
+  }
 
 // Dummy text similarity function (replace with a proper implementation as needed).
 export function textSimilarity(a: string, b: string): number {
@@ -125,36 +132,39 @@ export async function findBestMatch(
 
 // Capture a snapshot of the current page state and save a screenshot locally.
 export async function getPageState(page: Page): Promise<object> {
-  const timestamp = Date.now();
-  const screenshotDir =
-    process.env.SCREENSHOT_DIR || path.resolve(__dirname, "../screenshots");
-  const screenshotPath = path.resolve(screenshotDir, `screenshot-${timestamp}.png`);
-  await fs.promises.mkdir(path.dirname(screenshotPath), { recursive: true });
-  await page.screenshot({ path: screenshotPath });
-  return {
-    url: page.url(),
-    title: await page.title(),
-    domSnapshot: await page.evaluate(() => ({
-      buttons: Array.from(document.querySelectorAll("button")).map((b) =>
-        b.textContent?.trim()
-      ),
-      inputs: Array.from(document.querySelectorAll("input")).map(
-        (i) => i.id || i.name
-      ),
-      links: Array.from(document.querySelectorAll("a")).map((a) =>
-        a.textContent?.trim()
-      ),
-      landmarks: Array.from(document.querySelectorAll("[role]")).map((el) => ({
-        role: el.getAttribute("role"),
-        text: el.textContent?.trim(),
+    const timestamp = Date.now();
+    const screenshotDir =
+      process.env.SCREENSHOT_DIR || path.resolve(__dirname, "../screenshots");
+    const screenshotPath = path.resolve(screenshotDir, `screenshot-${timestamp}.png`);
+    await fs.promises.mkdir(path.dirname(screenshotPath), { recursive: true });
+    await page.screenshot({ path: screenshotPath });
+  
+    const screenshotBuffer = await page.screenshot(); // Capture screenshot as buffer
+  
+    return {
+      url: page.url(),
+      title: await page.title(),
+      domSnapshot: await page.evaluate(() => ({
+        buttons: Array.from(document.querySelectorAll("button")).map((b) =>
+          b.textContent?.trim()
+        ),
+        inputs: Array.from(document.querySelectorAll("input")).map(
+          (i) => i.id || i.name
+        ),
+        links: Array.from(document.querySelectorAll("a")).map((a) =>
+          a.textContent?.trim()
+        ),
+        landmarks: Array.from(document.querySelectorAll("[role]")).map((el) => ({
+          role: el.getAttribute("role"),
+          text: el.textContent?.trim(),
+        })),
       })),
-    })),
-    screenshot: {
-      path: screenshotPath,
-      base64: await page.screenshot({ encoding: "base64" }),
-    },
-  };
-}
+      screenshot: {
+        path: screenshotPath,
+        base64: screenshotBuffer.toString("base64"), // Convert buffer to base64
+      },
+    };
+  }  
 
 // Verify that an action succeeded based on its type.
 export async function verifyAction(page: Page, action: Action): Promise<boolean> {

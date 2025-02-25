@@ -1,4 +1,4 @@
-import { Ollama } from "@langchain/ollama.js";
+import { Ollama } from "@langchain/ollama";
 import dotenv from "dotenv";
 import { GraphContext, ActionSchema } from "./browserExecutor.js";
 
