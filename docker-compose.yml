@@ -3,10 +3,12 @@ services:
   web-scraper:
     build: .
     container_name: playwright-bot
-    environment:
-      - NODE_ENV=production
-      - HEADLESS=true
+    user: root
+    env_file:
+      - .env.docker
     volumes:
       - ./logs:/app/logs
       - ./screenshots:/app/screenshots
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped

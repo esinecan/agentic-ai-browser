@@ -1,9 +1,12 @@
 import { launchBrowser, createPage, getPageState, verifyAction, GraphContext } from "./browserExecutor.js";
-import { generateNextAction } from "./llmProcessorOllama.js";
-import { Page, ElementHandle } from 'playwright';
-import { Action, doRetry } from './browserExecutor.js';
+import { ollamaProcessor } from "./llmProcessorOllama.js";
+import { Page } from 'playwright';
+import { Action } from './browserExecutor.js';
+import { LLMProcessor } from './llmProcessor.js';
 
 const MAX_RETRIES = 3;
+// Use our ollama processor by default, but allow for other implementations
+const llmProcessor: LLMProcessor = ollamaProcessor;
 
 // Define our state functions in an object keyed by state name.
 const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
@@ -18,7 +21,7 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
   chooseAction: async (ctx: GraphContext) => {
     if (!ctx.page) throw new Error("Page not initialized");
     const stateSnapshot = await getPageState(ctx.page);
-    const action = await generateNextAction(stateSnapshot, ctx);
+    const action = await llmProcessor.generateNextAction(stateSnapshot, ctx);
     if (!action) {
       ctx.history.push("Failed to generate a valid action.");
       return "handleFailure";

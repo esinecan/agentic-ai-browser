@@ -12,6 +12,7 @@
         "test": "jest"
     },
     "dependencies": {
+        "@google/generative-ai": "^0.22.0",
         "@langchain/langgraph": "^0.2.49",
         "@langchain/ollama": "^0.2.0",
         "@playwright/test": "^1.50.1",

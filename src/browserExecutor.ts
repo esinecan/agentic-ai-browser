@@ -34,9 +34,12 @@ export interface GraphContext {
 
 // Launch the browser.
 export async function launchBrowser(): Promise<Browser> {
+  const chromiumPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "C:\\Users\\yepis\\AppData\\Local\\Google\\Chrome SxS\\Application\\chrome.exe";
+    
   return await chromium.launch({
     headless: process.env.HEADLESS !== "false",
     timeout: DEFAULT_NAVIGATION_TIMEOUT,
+    executablePath: chromiumPath,
   });
 }
 
