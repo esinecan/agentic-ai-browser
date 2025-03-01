@@ -30,11 +30,12 @@ export interface GraphContext {
   history: string[];
   startTime?: number;
   lastScreenshot?: string;
+  userGoal?: string;  // Added userGoal property
 }
 
 // Launch the browser.
 export async function launchBrowser(): Promise<Browser> {
-  const chromiumPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
+  const chromiumPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "C:\\Users\\yepis\\AppData\\Local\\Google\\Chrome SxS\\Application\\chrome.exe";
     
   return await chromium.launch({
     headless: process.env.HEADLESS !== "false",
@@ -46,7 +47,7 @@ export async function launchBrowser(): Promise<Browser> {
 // Create a new page and navigate to the starting URL.
 export async function createPage(browser: Browser): Promise<Page> {
   const page = await browser.newPage();
-  const startUrl = process.env.START_URL || "https://google.com";
+  const startUrl = process.env.START_URL || "https://duckduckgo.com";
   await page.goto(startUrl);
   return page;
 }
@@ -135,14 +136,14 @@ export async function findBestMatch(
 
 // Capture a snapshot of the current page state and save a screenshot locally.
 export async function getPageState(page: Page): Promise<object> {
-    const timestamp = Date.now();
+    /*const timestamp = Date.now();
     const screenshotDir =
       process.env.SCREENSHOT_DIR || path.resolve(__dirname, "../screenshots");
     const screenshotPath = path.resolve(screenshotDir, `screenshot-${timestamp}.png`);
     await fs.promises.mkdir(path.dirname(screenshotPath), { recursive: true });
-    await page.screenshot({ path: screenshotPath });
+    await page.screenshot({ path: screenshotPath });*/
   
-    const screenshotBuffer = await page.screenshot(); // Capture screenshot as buffer
+    //const screenshotBuffer = await page.screenshot(); // Capture screenshot as buffer
   
     return {
       url: page.url(),
@@ -161,11 +162,11 @@ export async function getPageState(page: Page): Promise<object> {
           role: el.getAttribute("role"),
           text: el.textContent?.trim(),
         })),
-      })),
+      }))/*,
       screenshot: {
         path: screenshotPath,
         base64: screenshotBuffer.toString("base64"), // Convert buffer to base64
-      },
+      },*/
     };
   }  
 

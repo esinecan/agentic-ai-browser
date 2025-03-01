@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import { runGraph } from "./automation.js";
 import { Page } from "playwright";
-import path from 'path';
+//import path from 'path';
 import fs from 'fs';
 
 dotenv.config();
@@ -17,15 +17,15 @@ dotenv.config();
 
 export async function getPageState(page: Page): Promise<object> {
   const timestamp = Date.now();
-  const screenshotDir = process.env.SCREENSHOT_DIR || path.resolve(__dirname, "../screenshots");
-  const screenshotPath = path.resolve(screenshotDir, `screenshot-${timestamp}.png`);
+  //const screenshotDir = process.env.SCREENSHOT_DIR || path.resolve(__dirname, "../screenshots");
+ // const screenshotPath = path.resolve(screenshotDir, `screenshot-${timestamp}.png`);
 
   // Ensure folder exists
-  await fs.promises.mkdir(path.dirname(screenshotPath), { recursive: true });
+  //await fs.promises.mkdir(path.dirname(screenshotPath), { recursive: true });
 
   // Take the screenshot without encoding option, returns a Buffer
-  const screenshotBuffer = await page.screenshot({ path: screenshotPath });
-  const base64Data = screenshotBuffer.toString("base64");
+  //const screenshotBuffer = await page.screenshot({ path: screenshotPath });
+  //const base64Data = screenshotBuffer.toString("base64");
 
   return {
     url: page.url(),
@@ -38,10 +38,10 @@ export async function getPageState(page: Page): Promise<object> {
         role: el.getAttribute("role"),
         text: el.textContent?.trim(),
       })),
-    })),
+    }))/*,
     screenshot: {
       path: screenshotPath,
       base64: base64Data,
-    },
+    },*/
   };
 }
