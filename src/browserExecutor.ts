@@ -12,12 +12,13 @@ export const SIMILARITY_THRESHOLD = 0.7;
 
 // Define and export the action schema and type.
 export const ActionSchema = z.object({
-  type: z.enum(["click", "input", "scroll", "navigate", "extract", "wait"]),
+  type: z.enum(["click", "input", "scroll", "navigate", "extract", "wait", "askHuman"]), // Added askHuman
   element: z.string().optional(),
   value: z.string().optional(),
   description: z.string().optional(),
   selectorType: z.enum(["css", "xpath", "text"]).optional().default("css"),
   maxWait: z.number().optional().default(5000),
+  question: z.string().optional(), // New field for human questions
 });
 export type Action = z.infer<typeof ActionSchema>;
 
@@ -28,9 +29,11 @@ export interface GraphContext {
   action?: Action;
   retries?: number;
   history: string[];
+  actionHistory?: Action[];   // Added to track actions for redundancy detection
+  actionFeedback?: string;    // Added to provide feedback to LLMs about repetitive actions
   startTime?: number;
   lastScreenshot?: string;
-  userGoal?: string;  // Added userGoal property
+  userGoal?: string;  
 }
 
 // Launch the browser.
@@ -47,7 +50,7 @@ export async function launchBrowser(): Promise<Browser> {
 // Create a new page and navigate to the starting URL.
 export async function createPage(browser: Browser): Promise<Page> {
   const page = await browser.newPage();
-  const startUrl = process.env.START_URL || "https://duckduckgo.com";
+  const startUrl = process.env.START_URL || "https://google.com";
   await page.goto(startUrl);
   return page;
 }
@@ -199,6 +202,8 @@ export async function verifyAction(page: Page, action: Action): Promise<boolean>
         const currentUrl = page.url();
         return currentUrl.includes(action.value || "");
       }
+      case "askHuman": // Always consider human interaction successful
+        return true;
       case "scroll":
       case "extract":
       case "wait":

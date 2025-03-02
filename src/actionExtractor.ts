@@ -16,11 +16,16 @@ export class ActionExtractor {
   static extract(rawText: string): Action | null {
     try {
       // Try multiple extraction strategies in order of reliability
-      return (
+      const result = 
         this.extractFromJson(rawText) || 
         this.extractFromKeyValuePairs(rawText) ||
-        this.extractFromLoosePatterns(rawText)
-      );
+        this.extractFromLoosePatterns(rawText);
+      
+      if (!result) {
+        console.debug("All extraction methods failed for text:", rawText.substring(0, 200) + (rawText.length > 200 ? "...": ""));
+      }
+      
+      return result;
     } catch (error) {
       console.error("Action extraction failed:", error);
       return null;
@@ -93,24 +98,40 @@ export class ActionExtractor {
       let match;
       const extractedPairs: Record<string, string> = {};
       
-      // Flag to track if we've already found an action (to preserve the first valid one)
+      // Track if we've found type or action fields
+      let typeFound = false;
       let actionFound = false;
 
       while ((match = keyValueRegex.exec(text)) !== null) {
         const key = match[1].trim().toLowerCase();
-        
-        // If action is already found, skip further action keys to preserve the first one
-        if (key === "action" && actionFound) continue;
-        if (key === "action") actionFound = true;
-        
-        // Get the value from whichever capturing group matched (quoted or unquoted)
         const value = match[2] || match[3] || match[4] || "";
-        extractedPairs[key] = value.trim();
+        
+        // Give priority to "type" over "action" field
+        if (key === "type") {
+          extractedPairs[key] = value.trim();
+          typeFound = true;
+        } 
+        // Only use "action" as a fallback if no "type" is found
+        else if (key === "action" && !typeFound) {
+          // Log a warning but don't store "action" as is - we'll handle it in normalization
+          actionFound = true;
+          extractedPairs["_action"] = value.trim(); // Store with different key to prevent confusion
+        }
+        else {
+          extractedPairs[key] = value.trim();
+        }
       }
 
-      // Ensure we have a valid action before proceeding
-      if (Object.keys(extractedPairs).length === 0 || (!extractedPairs["action"] && !extractedPairs["type"])) {
+      // Ensure we have either a type or action before proceeding
+      if (Object.keys(extractedPairs).length === 0 || (!typeFound && !actionFound)) {
         return null;
+      }
+
+      // If we found an action but no type, promote action's value to type
+      if (!typeFound && actionFound) {
+        console.warn("Found 'action' field instead of 'type'. Converting to proper format.");
+        extractedPairs["type"] = extractedPairs["_action"];
+        delete extractedPairs["_action"];
       }
 
       return this.normalizeActionObject(extractedPairs);
@@ -126,7 +147,7 @@ export class ActionExtractor {
   private static extractFromLoosePatterns(text: string): Action | null {
     try {
       // Look for common action words
-      const actionTypes = ["click", "input", "navigate", "scroll", "extract", "wait"];
+      const actionTypes = ["click", "input", "navigate", "scroll", "extract", "wait", "askHuman", "askhuman", "ask_human", "ask"];
       let actionType: string | null = null;
       
       // Find the first mention of an action type
@@ -134,7 +155,12 @@ export class ActionExtractor {
         // More specific regex to avoid false positives - require it to be a word boundary or near special characters
         const regex = new RegExp(`(\\b|action|type)[\\s:"']*${type}\\b`, 'i');
         if (regex.test(text)) {
-          actionType = type;
+          // Map variations to the canonical action type
+          if (type === "askhuman" || type === "ask_human" || type === "ask") {
+            actionType = "askHuman";
+          } else {
+            actionType = type;
+          }
           break;
         }
       }
@@ -159,6 +185,21 @@ export class ActionExtractor {
         value = valueMatch[1].trim();
       }
       
+      // Try to find question for askHuman action
+      let question: string | null = null;
+      if (actionType === "askHuman") {
+        const questionMatch = text.match(/question[:\s]+["']?([^"'\n,}]+)["']?/i) ||
+                             text.match(/ask[:\s]+["']?([^"'\n,}]+)["']?/i) ||
+                             text.match(/help[:\s]+["']?([^"'\n,}]+)["']?/i);
+        
+        if (questionMatch) {
+          question = questionMatch[1].trim();
+        } else {
+          // Default question if none is specified
+          question = "What should I do next?";
+        }
+      }
+      
       // Build a basic action object
       const action: Partial<Action> = {
         type: actionType as any
@@ -166,6 +207,7 @@ export class ActionExtractor {
       
       if (element) action.element = element;
       if (value) action.value = value;
+      if (question) action.question = question;
       
       // Try to validate it
       return this.normalizeActionObject(action);
@@ -187,29 +229,47 @@ export class ActionExtractor {
       
       // Handle nested 'action' property (e.g. { "action": { "type": "wait", ... } })
       if (obj.action && typeof obj.action === 'object') {
+        console.warn("Found nested 'action' object instead of 'type' field. Converting to proper format.");
         obj = { ...obj.action };
       }
+      
       // Handle case where 'action' field is used instead of 'type'
-      else if (obj.action && typeof obj.action === 'string' && !obj.type) {
-        obj.type = obj.action;
+      // VERY IMPORTANT: The action field value should be used as the type, not the string 'action'
+      if (obj.action && typeof obj.action === 'string' && !obj.type) {
+        console.warn(`Found 'action: ${obj.action}' instead of 'type: ${obj.action}'. Converting to proper format.`);
+        obj.type = obj.action.toLowerCase();
       }
       
       // Special handling for "nextAction" field (seen in some responses)
       if (obj.nextAction && typeof obj.nextAction === 'object') {
+        console.warn("Found 'nextAction' object. Converting to proper format.");
         obj = { ...obj.nextAction };
       }
       
       // Make type lowercase if it exists
       if (typeof obj.type === 'string') {
         normalized.type = obj.type.toLowerCase() as any;
+
+        // Normalize askHuman variations
+        if (["askhuman", "ask_human", "ask"].includes(normalized.type as string)) {
+          normalized.type = "askHuman";
+        }
       }
       
       // Copy over other common properties
       if (obj.element) normalized.element = obj.element;
       if (obj.value) normalized.value = obj.value;
       if (obj.description) normalized.description = obj.description;
-      if (obj.selectorType) normalized.selectorType = obj.selectorType;
+      if (obj.selectorType) normalized.selectorType = obj.selectorType.toLowerCase();
       if (obj.maxWait || obj.maxwait) normalized.maxWait = parseInt(obj.maxWait || obj.maxwait) || 5000;
+      
+      // Handle askHuman question field
+      if (obj.question) normalized.question = obj.question;
+      
+      // If it's an askHuman action but no question was provided, add a default one
+      if (normalized.type === 'askHuman' && !normalized.question) {
+        normalized.question = "What should I do next?";
+      }
       
       // Fix overly specific selectors or the literal 'selector' string
       if (normalized.element === 'selector') {
@@ -224,6 +284,34 @@ export class ActionExtractor {
       if (!normalized.type) {
         console.warn("No action type found in response");
         return null;
+      }
+      
+      // CRITICAL FIX: Make sure we never pass "action" as the type itself
+      // Use type assertion to avoid TypeScript error since we're validating at runtime
+      const typeStr = String(normalized.type).toLowerCase();
+      if (typeStr === 'action') {
+        console.warn("Invalid type 'action' detected, trying to infer actual type");
+        // Try to determine what the real type should be based on properties
+        if (normalized.value && normalized.element) {
+          normalized.type = 'input';
+        } else if (normalized.element) {
+          normalized.type = 'click';
+        } else if (normalized.value && normalized.value.match(/^https?:\/\//)) {
+          normalized.type = 'navigate';
+        } else if (normalized.question) {
+          normalized.type = 'askHuman';
+        } else {
+          console.error("Could not infer actual type from 'action'");
+          return null;
+        }
+      }
+      
+      // Special handling for repeated failures - suggest human help
+      if (obj._suggestHumanHelp) {
+        console.warn("Converting action to askHuman due to repeated failures");
+        const originalType = normalized.type;
+        normalized.type = 'askHuman';
+        normalized.question = `I'm having trouble ${originalType === 'click' ? 'clicking' : 'entering text into'} the element "${normalized.element}". What should I do instead?`;
       }
       
       // Add default values
@@ -247,12 +335,16 @@ export class ActionExtractor {
         return null; // This one's essential - can't navigate to nowhere
       }
       
+      // Debug action before validation
+      console.debug("Action before validation:", normalized);
+      
       // Validate with Zod schema
       const result = ActionSchema.safeParse(normalized);
       if (result.success) {
         return result.data;
       } else {
-        console.error("Action validation failed:", result.error);
+        console.error("Action validation failed:", JSON.stringify(result.error.issues, null, 2));
+        console.error("Failed object:", JSON.stringify(normalized, null, 2));
       }
       
       return null;

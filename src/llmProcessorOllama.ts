@@ -11,7 +11,7 @@ const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://host.docker.internal:1143
 
 const ollama = new ChatOllama({
   baseUrl: OLLAMA_HOST,
-  model: "llama3.2:latest", // Use the default model name
+  model: "deepseek-r1:1.5b", // Use the default model name
   temperature: 0.3,
   format: "json"
 });
@@ -22,28 +22,33 @@ export const ollamaProcessor: LLMProcessor = {
 You are a web automation assistant. 
 ${context.userGoal ? `Your goal is to: ${context.userGoal}` : ''}
 
+${context.actionFeedback ? `${context.actionFeedback}\n` : ''}
+
 Current page state:
 ${JSON.stringify(state, null, 2)}
 
 Available actions:
-Click: { type: "click", element: "input[type=text]", description: "text input field" }
-Input: { type: "input", element: "input[type=text]", value: "search text" }
-Navigate: { type: "navigate", value: "https://example.org" }
-Scroll: { type: "scroll" }
-Extract: { type: "extract" }
-Wait: { type: "wait", maxWait: 5000 }
+Click: { "type": "click", "element": "input[type=text]", "description": "text input field" }
+Input: { "type": "input", "element": "input[type=text]", "value": "search text" }
+Navigate: { "type": "navigate", "value": "https://example.org" }
+Scroll: { "type": "scroll" }
+Extract: { "type": "extract", "element": "div.content" }
+Wait: { "type": "wait", "maxWait": 5000 }
+AskHuman: { "type": "askHuman", "question": "How should I proceed with this form?" }
 
-Format your response as a simple JSON object with a 'type' field that is one of: click, input, navigate, scroll, extract, wait.
-Keep your response very short and include only necessary fields.
-For example: {"type": "input", "element": "input[type=text]", "value": "search query"}
+IMPORTANT: Format your response as a JSON object with a "type" field.
+Always use "type" to specify what action to perform.
+Example: {"type": "input", "element": "input[type=text]", "value": "search query"}
 
-IMPORTANT: When selecting elements, use common CSS selectors (not XPath) and be as general as possible.
+When selecting elements, use common CSS selectors (not XPath) and be as general as possible.
 Prefer tag selectors with attributes like: input[type=text], button[type=submit], a[href*="example"]
 Avoid specific classes or IDs that may be dynamic or change across sites.
 
+Use the askHuman action when you're stuck or unsure about how to proceed.
+
 Current task context:
 ${context.history.join('\n')}
-${context.retries ? `Previous attempts failed: ${context.retries}. Try a more generic selector like 'input[type=text]' or 'button[type=submit]'.` : ''}
+${context.retries ? `Previous attempts failed: ${context.retries}. Try a more generic selector like 'input[type=text]' or 'button[type=submit]' or consider asking for human help.` : ''}
 
 Next action:
     `;

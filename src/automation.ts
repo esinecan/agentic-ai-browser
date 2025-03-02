@@ -5,8 +5,12 @@ import { Page } from 'playwright';
 import { Action } from './browserExecutor.js';
 import { LLMProcessor } from './llmProcessor.js';
 import readline from 'readline';
+import fs from 'fs';
+import path from 'path';
 
 const MAX_RETRIES = 3;
+const MAX_REPEATED_ACTIONS = 3; // Number of repeated actions before forced change
+
 // Create a proper LLMProcessor object for Gemini
 const geminiProcessor: LLMProcessor = {
   generateNextAction: geminiGenerateNextAction
@@ -14,6 +18,76 @@ const geminiProcessor: LLMProcessor = {
 
 // Use our ollama processor by default, but allow for other implementations
 const llmProcessor: LLMProcessor = process.env.LLM_PROVIDER === 'gemini' ? geminiProcessor : ollamaProcessor;
+
+// Function to check if an action is redundant/repeated
+function isRedundantAction(currentAction: Action, history: Action[]): boolean {
+  if (history.length < 2) return false;
+  
+  // Get the last few actions for comparison
+  const recentActions = history.slice(-MAX_REPEATED_ACTIONS);
+  
+  // Count occurrences of this action type and target
+  let similarActionCount = 0;
+  
+  for (const pastAction of recentActions) {
+    if (pastAction.type === currentAction.type) {
+      // For extract and click, check if targeting the same element
+      if ((currentAction.type === 'extract' || currentAction.type === 'click') && 
+          pastAction.element === currentAction.element) {
+        similarActionCount++;
+      }
+      // For input, check if targeting the same element with the same value
+      else if (currentAction.type === 'input' && 
+               pastAction.element === currentAction.element && 
+               pastAction.value === currentAction.value) {
+        similarActionCount++;
+      }
+      // For navigate, check if navigating to the same URL
+      else if (currentAction.type === 'navigate' && pastAction.value === currentAction.value) {
+        similarActionCount++;
+      }
+      // For wait, consider it repeated if just repeated waits
+      else if (currentAction.type === 'wait') {
+        similarActionCount++;
+      }
+    }
+  }
+  
+  // If we've seen very similar actions multiple times in a row, consider it redundant
+  return similarActionCount >= MAX_REPEATED_ACTIONS - 1;
+}
+
+// Generate feedback for the LLM based on action history
+function generateActionFeedback(ctx: GraphContext): string {
+  if (!ctx.actionHistory || ctx.actionHistory.length < 2) return "";
+  
+  const lastAction = ctx.actionHistory[ctx.actionHistory.length - 1];
+  const previousActions = ctx.actionHistory.slice(-MAX_REPEATED_ACTIONS);
+  
+  // Check for repeated actions
+  if (isRedundantAction(lastAction, previousActions)) {
+    // Build a specific feedback message based on the action type
+    if (lastAction.type === 'extract') {
+      return `NOTICE: You've repeatedly tried to extract content from "${lastAction.element}". Please try a different element or action type.`;
+    }
+    else if (lastAction.type === 'click') {
+      return `NOTICE: You've repeatedly tried to click "${lastAction.element}" without success. Try a different element or action type.`;
+    }
+    else if (lastAction.type === 'input') {
+      return `NOTICE: You've repeatedly tried to input "${lastAction.value}" into "${lastAction.element}". Try a different field or value.`;
+    }
+    else if (lastAction.type === 'navigate') {
+      return `NOTICE: You've repeatedly tried to navigate to "${lastAction.value}". Try a different URL or action type.`;
+    }
+    else if (lastAction.type === 'wait') {
+      return `NOTICE: You've used multiple wait actions in succession. Try a more productive action now.`;
+    }
+    
+    return `NOTICE: You seem to be repeating the same "${lastAction.type}" action. Please try something different.`;
+  }
+  
+  return "";
+}
 
 // Create readline interface for user input
 function promptUser(question: string): Promise<string> {
@@ -34,6 +108,7 @@ function promptUser(question: string): Promise<string> {
 const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
   start: async (ctx: GraphContext) => {
     ctx.history = [];
+    ctx.actionHistory = []; // Track actions separately for redundancy detection
     ctx.startTime = Date.now();
     ctx.browser = await launchBrowser();
     ctx.page = await createPage(ctx.browser);
@@ -43,6 +118,14 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
   chooseAction: async (ctx: GraphContext) => {
     if (!ctx.page) throw new Error("Page not initialized");
     const stateSnapshot = await getPageState(ctx.page);
+    
+    // Add feedback about repeated actions to context for the LLM
+    const actionFeedback = generateActionFeedback(ctx);
+    if (actionFeedback) {
+      ctx.actionFeedback = actionFeedback;
+      console.log(actionFeedback); // Log feedback for debugging
+    }
+    
     const action = await llmProcessor.generateNextAction(stateSnapshot, ctx);
     
     if (!action) {
@@ -50,8 +133,59 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
       return "handleFailure";
     }
     
+    // Smart triggering for human help
+    if (ctx.retries && ctx.retries >= 2) {
+      // After 2 retries, consider asking for help
+      const shouldAskHuman = Math.random() < 0.7; // 70% chance after repeated failures
+      
+      if (shouldAskHuman) {
+        // Generate a question based on recent failures
+        const failedActionType = ctx.actionHistory && ctx.actionHistory.length > 0 
+          ? ctx.actionHistory[ctx.actionHistory.length - 1].type 
+          : 'action';
+        
+        ctx.action = {
+          type: 'askHuman',
+          question: `I've tried ${ctx.retries} times to ${failedActionType} but keep failing. The page title is "${await ctx.page.title()}". What should I try next?`,
+          selectorType: 'css',
+          maxWait: 5000
+        };
+        
+        ctx.history.push(`AI decided to ask for human help after ${ctx.retries} failures`);
+        return "askHuman";
+      }
+    }
+    
+    // If this is a repeated redundant action, take evasive action
+    if (ctx.actionHistory && ctx.actionHistory.length > 0 && 
+        isRedundantAction(action, ctx.actionHistory)) {
+      ctx.history.push(`Detected redundant action: ${JSON.stringify(action)}. Trying to break the loop.`);
+      
+      // Try a "wait" action to let the page settle if we're in a loop
+      if (action.type !== 'wait') {
+        ctx.action = { type: 'wait', maxWait: 2000, selectorType: 'css' };
+        ctx.history.push(`Inserted wait action to break potential loop.`);
+        return "wait";
+      }
+      // If we're already in a wait loop, try to ask human
+      else if (action.type === 'wait') {
+        ctx.action = {
+          type: 'askHuman',
+          question: `I seem to be stuck in a loop of waiting. The page title is "${await ctx.page.title()}". What should I try next?`,
+          selectorType: 'css',
+          maxWait: 5000
+        };
+        ctx.history.push(`AI decided to ask for human help to break out of wait loop`);
+        return "askHuman";
+      }
+    }
+    
     ctx.action = action;
     ctx.history.push(`Selected action: ${JSON.stringify(action)}`);
+    
+    // Record the action for redundancy detection
+    if (!ctx.actionHistory) ctx.actionHistory = [];
+    ctx.actionHistory.push(action);
     
     // Now handle possible capitalization differences
     const actionType = action.type.toLowerCase();
@@ -64,6 +198,63 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
       return "handleFailure";
     }
   },
+  
+  // New state handler for askHuman action
+  askHuman: async (ctx: GraphContext) => {
+    if (!ctx.page || !ctx.action) throw new Error("Invalid context");
+    
+    try {
+      // Store page state before human interaction
+      const beforeHelpState = {
+        url: ctx.page.url(),
+        title: await ctx.page.title()
+      };
+      
+      // Take a screenshot to show the current state
+      const screenshotDir = process.env.SCREENSHOT_DIR || "./screenshots";
+      const screenshotPath = path.join(screenshotDir, `human-help-${Date.now()}.png`);
+      await fs.promises.mkdir(path.dirname(screenshotPath), { recursive: true });
+      await ctx.page.screenshot({ path: screenshotPath });
+      
+      // Format the question with context
+      const question = ctx.action.question || "What should I do next?";
+      const formattedQuestion = `
+AI needs your help (screenshot saved to ${screenshotPath}):
+
+${question}
+
+Current URL: ${ctx.page.url()}
+Current task: ${ctx.userGoal}
+Recent actions: ${ctx.history.slice(-3).join("\n")}
+
+Your guidance:`;
+      
+      // Get human input
+      const humanResponse = await promptUser(formattedQuestion);
+      
+      // Save the response to context for the LLM to use
+      ctx.actionFeedback = `HUMAN ASSISTANCE: ${humanResponse}`;
+      ctx.history.push(`Asked human for help: "${question.substring(0, 50)}${question.length > 50 ? '...' : ''}"`);
+      ctx.history.push(`Human responded: "${humanResponse.substring(0, 50)}${humanResponse.length > 50 ? '...' : ''}"`);
+      
+      // After getting human response, check if page changed
+      const currentUrl = ctx.page.url();
+      if (currentUrl !== beforeHelpState.url) {
+        ctx.history.push(`Note: Page changed during human interaction from "${beforeHelpState.url}" to "${currentUrl}"`);
+        // Reset accumulated state since we're on a new page
+        ctx.retries = 0;
+      }
+      
+      // Reset retries since human helped
+      ctx.retries = 0;
+      
+      return "chooseAction";
+    } catch (error) {
+      ctx.history.push(`Human interaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return "handleFailure";
+    }
+  },
+  
   click: async (ctx: GraphContext) => {
     if (!ctx.page || !ctx.action) throw new Error("Invalid context");
     try {
