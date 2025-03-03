@@ -1,0 +1,23 @@
+[
+  {
+    "actionType": "navigate",
+    "selector": "https://www.google.com/",
+    "domain": "www.google.com",
+    "successCount": 5,
+    "lastSuccess": "2025-03-03T10:38:24.153Z"
+  },
+  {
+    "actionType": "navigate",
+    "selector": "https://www.google.de/search?q=berlin+weather",
+    "domain": "www.google.de",
+    "successCount": 5,
+    "lastSuccess": "2025-03-03T11:52:39.810Z"
+  },
+  {
+    "actionType": "input",
+    "selector": "input[type=text]",
+    "domain": "www.google.de",
+    "successCount": 2,
+    "lastSuccess": "2025-03-03T12:14:25.642Z"
+  }
+]

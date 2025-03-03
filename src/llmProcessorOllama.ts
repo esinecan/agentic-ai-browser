@@ -11,7 +11,7 @@ const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://host.docker.internal:1143
 
 const ollama = new ChatOllama({
   baseUrl: OLLAMA_HOST,
-  model: "deepseek-r1:1.5b", // Use the default model name
+  model: "nchapman/dolphin3.0-llama3:3b", // Use the default model name
   temperature: 0.3,
   format: "json"
 });
@@ -22,10 +22,35 @@ export const ollamaProcessor: LLMProcessor = {
 You are a web automation assistant. 
 ${context.userGoal ? `Your goal is to: ${context.userGoal}` : ''}
 
+${context.pageSummary ? `Page Summary: ${context.pageSummary}` : ''}
+
 ${context.actionFeedback ? `${context.actionFeedback}\n` : ''}
 
+${context.lastActionSuccess 
+  ? `🌟 The last action was SUCCESSFUL! Keep up the good work!` 
+  : context.retries 
+    ? `Previous ${context.retries} attempts with selector "${context.lastSelector}" weren't successful. Let's try a different approach.` 
+    : ''
+}
+
+${context.interactiveElements && context.interactiveElements.length > 0 
+  ? `Interactive elements detected on page:
+${context.interactiveElements.map(el => `- ${el}`).join('\n')}` 
+  : ''}
+
 Current page state:
-${JSON.stringify(state, null, 2)}
+URL: ${(state as any).url}
+Title: ${(state as any).title}
+
+${context.successfulActions && context.successfulActions.length > 0 
+  ? `💡 Actions that have worked well on this site:\n${context.successfulActions.slice(-3).join('\n')}`
+  : ''
+}
+
+${context.recognizedMilestones && context.recognizedMilestones.length > 0
+  ? `🏆 Milestones achieved: ${context.recognizedMilestones.join(', ')}`
+  : ''
+}
 
 Available actions:
 Click: { "type": "click", "element": "input[type=text]", "description": "text input field" }
@@ -47,15 +72,18 @@ Avoid specific classes or IDs that may be dynamic or change across sites.
 Use the askHuman action when you're stuck or unsure about how to proceed.
 
 Current task context:
-${context.history.join('\n')}
-${context.retries ? `Previous attempts failed: ${context.retries}. Try a more generic selector like 'input[type=text]' or 'button[type=submit]' or consider asking for human help.` : ''}
+${context.compressedHistory ? context.compressedHistory.join('\n') : context.history.join('\n')}
 
 Next action:
     `;
     try {
-      console.log("Calling Ollama API");
+      console.log("-------------------");
+      console.log("\n PROMPT:\n" + prompt + "\n");
+      console.log("-------------------");
       const response = await ollama.invoke(prompt);
-      console.log("Response received: ", JSON.stringify(response, null, 2));
+      console.log("-------------------");
+      console.log("\n RESPONSE:\n" + JSON.stringify(response, null, 2) + "\n");
+      console.log("-------------------");
       
       // Extract text from the response content
       let responseContent = '';

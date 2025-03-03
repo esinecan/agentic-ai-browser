@@ -26,10 +26,35 @@ export async function generateNextAction(state: object, context: GraphContext): 
 You are a web automation assistant using Google Gemini Generative AI.
 ${context.userGoal ? `Your goal is to: ${context.userGoal}` : ''}
 
+${context.pageSummary ? `Page Summary: ${context.pageSummary}` : ''}
+
 ${context.actionFeedback ? `${context.actionFeedback}\n` : ''}
 
+${context.lastActionSuccess 
+  ? `🌟 The last action was SUCCESSFUL! Keep up the good work!` 
+  : context.retries 
+    ? `Previous ${context.retries} attempts with selector "${context.lastSelector}" weren't successful. Let's try a different approach.` 
+    : ''
+}
+
+${context.interactiveElements && context.interactiveElements.length > 0 
+  ? `Interactive elements detected on page:
+${context.interactiveElements.map(el => `- ${el}`).join('\n')}` 
+  : ''}
+
 Current page state:
-${JSON.stringify(state, null, 2)}
+URL: ${(state as any).url}
+Title: ${(state as any).title}
+
+${context.successfulActions && context.successfulActions.length > 0 
+  ? `💡 Actions that have worked well on this site:\n${context.successfulActions.slice(-3).join('\n')}`
+  : ''
+}
+
+${context.recognizedMilestones && context.recognizedMilestones.length > 0
+  ? `🏆 Milestones achieved: ${context.recognizedMilestones.join(', ')}`
+  : ''
+}
 
 Available actions:
 Click: { "type": "click", "element": "input[type=text]", "description": "text input field" }
@@ -51,8 +76,7 @@ Avoid specific classes or IDs that may be dynamic or change across sites.
 Use the askHuman action when you're stuck or unsure about how to proceed.
 
 Current task context:
-${context.history.join("\n")}
-${context.retries ? `Previous attempts failed: ${context.retries}. Try a more generic selector like 'input[type=text]' or 'button[type=submit]' or consider asking for human help.` : ""}
+${context.compressedHistory ? context.compressedHistory.join('\n') : context.history.join('\n')}
 
 Next action:
   `;
