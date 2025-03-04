@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { SuccessPatterns } from './successPatterns.js';
 import { generatePageSummary, extractInteractiveElements } from './pageInterpreter.js';
+import { getAgentState } from './utils/agentState.js';
 
 const MAX_RETRIES = 3;
 const MAX_REPEATED_ACTIONS = 3; // Number of repeated actions before forced change
@@ -301,20 +302,32 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
     // Initialize milestones
     initializeMilestones(ctx);
     
+    // Reset the agent state
+    const agentState = getAgentState();
+    agentState.clearStop();
+    
     return "chooseAction";
   },
   chooseAction: async (ctx: GraphContext) => {
+    // First check for stop request
+    const agentState = getAgentState();
+    if (agentState.isStopRequested()) {
+      ctx.history.push("Stop requested by user");
+      return "terminate";
+    }
+    
     if (!ctx.page) throw new Error("Page not initialized");
     const stateSnapshot = await getPageState(ctx.page) as PageState;
+    
+    // Store the current valid state in the AgentState
+    agentState.setLastValidState(stateSnapshot);
     
     // Get AI-generated page summary
     try {
       ctx.pageSummary = await generatePageSummary(stateSnapshot.domSnapshot);
-      //console.log("Page summary:", ctx.pageSummary);
       
       // Get interactive elements
       ctx.interactiveElements = extractInteractiveElements(stateSnapshot.domSnapshot);
-      //console.log("Interactive elements:", ctx.interactiveElements);
     } catch (error) {
       console.error("Error generating page summary:", error);
     }
@@ -833,10 +846,13 @@ Your guidance:`;
   },
   terminate: async (ctx: GraphContext) => {
     ctx.history.push("Session ended");
-    //console.log("Execution history:", ctx.history);
+    
+    // Clear the stop flag
+    const agentState = getAgentState();
+    agentState.clearStop();
+    
     if (ctx.browser) {
       await ctx.browser.close();
-      //console.log("Browser closed successfully");
     }
     return "terminated";
   },
@@ -868,6 +884,24 @@ async function runStateMachine(ctx: GraphContext): Promise<void> {
   let successActionCount = 0;
   
   while (currentState !== "terminated") {
+    // Check for stop request at the beginning of each cycle
+    const agentState = getAgentState();
+    if (agentState.isStopRequested()) {
+      ctx.history.push("Stop requested by user during state machine execution");
+      currentState = "terminate";
+      continue;
+    }
+    
+    // Store current valid state in case of emergency stop
+    if (ctx.page) {
+      try {
+        const stateSnapshot = await getPageState(ctx.page);
+        agentState.setLastValidState(stateSnapshot);
+      } catch (error) {
+        console.error("Failed to capture state for emergency stop handling:", error);
+      }
+    }
+    
     if (!(currentState in states)) {
       // Handle undefined states gracefully instead of throwing an error
       const validStates = Object.keys(states).join(", ");
@@ -885,7 +919,6 @@ async function runStateMachine(ctx: GraphContext): Promise<void> {
       if (totalActionCount % 5 === 0) {
         const successRate = (successActionCount / totalActionCount) * 100;
         const progressBar = '='.repeat(Math.floor(successRate / 10)) + '-'.repeat(10 - Math.floor(successRate / 10));
-        //console.log(`Progress: [${progressBar}] ${successRate.toFixed(1)}% success rate`);
         
         if (successRate > 70) {
           //console.log(`🌟 You're doing great! Keep up the good work!`);
@@ -901,7 +934,6 @@ async function runStateMachine(ctx: GraphContext): Promise<void> {
 export async function runGraph(): Promise<void> {
   // Prompt the user for their automation goal
   const userGoal = await promptUser("Please enter your goal for this automation: ");
-  //console.log(`Starting automation with goal: ${userGoal}`);
   
   // Initialize context with user goal and history
   const ctx: GraphContext = { 
@@ -915,4 +947,11 @@ export async function runGraph(): Promise<void> {
   };
   
   await runStateMachine(ctx);
+}
+
+// Add a new exported function to force stop the agent
+export async function stopAgent(): Promise<void> {
+  const agentState = getAgentState();
+  agentState.requestStop();
+  console.log("Stop request has been registered");
 }
