@@ -19,5 +19,54 @@
     "domain": "www.google.de",
     "successCount": 2,
     "lastSuccess": "2025-03-03T12:14:25.642Z"
+  },
+  {
+    "actionType": "input",
+    "selector": "textarea",
+    "domain": "www.google.com",
+    "successCount": 4,
+    "lastSuccess": "2025-03-03T14:05:48.903Z"
+  },
+  {
+    "actionType": "input",
+    "selector": "input[type=text]",
+    "domain": "www.google.com",
+    "successCount": 2,
+    "lastSuccess": "2025-03-03T14:05:43.521Z"
+  },
+  {
+    "actionType": "navigate",
+    "selector": "https://www.google.com/search?q=berlin+weather",
+    "domain": "www.google.com",
+    "successCount": 11,
+    "lastSuccess": "2025-03-03T18:58:22.302Z"
+  },
+  {
+    "actionType": "extract",
+    "selector": "div.main contents",
+    "domain": "www.google.com",
+    "successCount": 4,
+    "lastSuccess": "2025-03-03T14:08:12.035Z"
+  },
+  {
+    "actionType": "extract",
+    "selector": "textarea#sca_esv",
+    "domain": "www.google.com",
+    "successCount": 1,
+    "lastSuccess": "2025-03-03T18:59:59.008Z"
+  },
+  {
+    "actionType": "navigate",
+    "selector": "https://duckduckgo.com/?t=h_&q=berlin+weather&ia=web",
+    "domain": "duckduckgo.com",
+    "successCount": 5,
+    "lastSuccess": "2025-03-03T19:55:40.252Z"
+  },
+  {
+    "actionType": "extract",
+    "selector": ".result__a",
+    "domain": "duckduckgo.com",
+    "successCount": 1,
+    "lastSuccess": "2025-03-03T19:55:21.803Z"
   }
 ]

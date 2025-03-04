@@ -1,4 +1,4 @@
-import { chromium, Browser, Page, ElementHandle } from "playwright";
+import { chromium, Browser, Page, ElementHandle, BrowserContext } from "playwright";
 import dotenv from "dotenv";
 import { z } from "zod";
 import fs from "fs";
@@ -50,15 +50,46 @@ export interface GraphContext {
   compressedHistory?: string[];  // Compressed version of action history
 }
 
-// Launch the browser.
 export async function launchBrowser(): Promise<Browser> {
-  const chromiumPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "C:\\Users\\yepis\\AppData\\Local\\Google\\Chrome SxS\\Application\\chrome.exe";
+  const chromiumPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || 
+    "C:\\Users\\yepis\\AppData\\Local\\Google\\Chrome SxS\\Application\\chrome.exe";
     
-  return await chromium.launch({
+  // Launch browser first, then create persistent context
+  const browser = await chromium.launch({
     headless: process.env.HEADLESS !== "false",
     timeout: DEFAULT_NAVIGATION_TIMEOUT,
     executablePath: chromiumPath,
   });
+  
+  // Create user data directory if it doesn't exist
+  const userDataDir = path.join(process.cwd(), "user-data");
+  if (!fs.existsSync(userDataDir)) {
+    fs.mkdirSync(userDataDir, { recursive: true });
+  }
+  
+  // Create a persistent context using the storage state approach
+  await browser.newContext({
+    storageState: fs.existsSync(path.join(userDataDir, "state.json")) 
+      ? path.join(userDataDir, "state.json") 
+      : undefined
+  });
+  
+  // Set up state saving when browser closes
+  browser.on('disconnected', async () => {
+    try {
+      // Get the first context
+      const contexts = browser.contexts();
+      if (contexts.length > 0) {
+        const state = await contexts[0].storageState();
+        fs.writeFileSync(path.join(userDataDir, "state.json"), JSON.stringify(state, null, 2));
+        console.log("Saved browser session state");
+      }
+    } catch (e) {
+      console.error("Failed to save browser state:", e);
+    }
+  });
+  
+  return browser;
 }
 
 // Create a new page and navigate to the starting URL.

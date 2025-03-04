@@ -8,7 +8,7 @@ dotenv.config();
 // Use a lightweight model for page summarization to keep it fast
 // We're reusing Ollama but configuring it with a smaller/faster model
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://host.docker.internal:11434';
-const SUMMARY_MODEL = process.env.SUMMARY_MODEL || "nchapman/dolphin3.0-llama3:3b"; // Using a smaller model by default
+const SUMMARY_MODEL = process.env.SUMMARY_MODEL || "granite3-dense:latest"; // Using a smaller model by default
 
 const summaryModel = new ChatOllama({
   baseUrl: OLLAMA_HOST,
@@ -25,20 +25,41 @@ export async function generatePageSummary(domSnapshot: any): Promise<string> {
     const cleanSnapshot = cleanDomSnapshotForSummary(domSnapshot);
     
     const prompt = `
-      You are a web page analyzer that provides concise and helpful descriptions of web pages.
-      Describe this webpage in 1-3 short sentences focusing on:
-      - Main visible interactive elements (buttons, forms, search boxes)
-      - Overall layout (header, content areas, sidebar)
-      - Primary purpose/type of the page (search page, login form, article, product page, etc.)
-      
-      Be extremely concise and focus only on the most important information a web automation system would need.
+     **You are an AI model that processes a raw JSON DOM and removes unnecessary elements while keeping the structure intact. Your goal is to filter out irrelevant elements and retain only the most meaningful text-based and interactive elements, while ensuring that the output follows the same DOM object format.**
+        ---
+        ### **Rules for Simplification:**  
+
+        #### **1. Keep Important Elements & Their Fields**  
+        - **Headings ('h1'-'h3')** → Retain if they contain meaningful text.  
+        - **Divs and Spans ('div', 'span')** → Examine carefully and keep if they contain useful information.
+        - **Paragraphs ('p', 'span')** → Keep only if they contain **visible text**.  
+        - **Links ('a', 'role: link')** → Preserve if they lead to another page or perform an action.  
+        - **Buttons ('button', 'role: button')** → Keep only if they contain meaningful actions.  
+        - **Inputs ('input', 'textarea')** → Retain forms, search boxes, and user inputs.  
+        - **Dialogs ('role: dialog')** → Keep important popups, confirmations, or notices.  
+
+        #### **2. Remove Redundant Elements Without Changing Structure**  
+        - **Drop elements with 'role: presentation', 'role: none', or empty text fields.**  
+        - **Remove raw CSS styles, inline styles, or empty divs.**  
+        - **Ignore elements with meaningless text like "Click here", "Learn more" unless inside a larger context.**  
+
+        #### **3. Keep the Original JSON Format**
+        - **Do not modify field names** (e.g., 'buttons', 'inputs', 'links').  
+        - **Do not restructure the object**—just remove unwanted elements.  
+        - **Ensure that the output format matches the input, minus unnecessary content.** 
       
       DOM snapshot: ${JSON.stringify(cleanSnapshot, null, 2)}
       
       Your concise page description:
     `;
     
-    const response = await summaryModel.invoke(prompt);
+      console.log("-------------------");
+      console.log("\n BROWSER EYE SLM PROMPT:\n" + prompt + "\n");
+      console.log("-------------------");
+      const response = await summaryModel.invoke(prompt);
+      console.log("-------------------");
+      console.log("\n BROWSER EYE SLM RESPONSE:\n" + JSON.stringify(response, null, 2) + "\n");
+      console.log("-------------------");
     
     // Extract text from the response content
     let summaryText = '';
