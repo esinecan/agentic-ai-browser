@@ -21,7 +21,7 @@ const summaryModel = new ChatOllama({
 export async function generatePageSummary(domSnapshot: any): Promise<string> {
   try {
     // Clean the DOM snapshot before sending it to the model
-    const cleanSnapshot = cleanDomSnapshotForSummary(domSnapshot);
+    //const cleanSnapshot = cleanDomSnapshotForSummary(domSnapshot);
     
     /*const prompt = `
      **This is the DOM content of a web page:**
@@ -81,7 +81,8 @@ export async function generatePageSummary(domSnapshot: any): Promise<string> {
     }
     
     return summaryText;*/
-    return cleanSnapshot;
+    //return cleanSnapshot;
+    return domSnapshot;
   } catch (error) {
     console.error("Error generating page summary:", error);
     return "Error generating page summary.";
@@ -113,14 +114,18 @@ export function extractInteractiveElements(domSnapshot: any): string[] {
     });
   }
   
-  // Extract links with text
+  // Extract links with text and URLs - Updated to handle new link format
   if (Array.isArray(domSnapshot.links)) {
-    domSnapshot.links.forEach((link: string | null, index: number) => {
-      if (link) {
-        // Avoid adding too many links, just highlight important ones
-        if (elements.length < 10) {
-          elements.push(`Link: "${link.trim()}"`);
+    domSnapshot.links.forEach((link: any, index: number) => {
+      // Check if link is the new format (object with text and url properties)
+      if (link && typeof link === 'object') {
+        if (link.text && link.url && elements.length < 10) {
+          elements.push(`Link: "${link.text.trim()}" (${link.url})`);
         }
+      } 
+      // Backward compatibility with old string format
+      else if (link && typeof link === 'string' && elements.length < 10) {
+        elements.push(`Link: "${link.trim()}"`);
       }
     });
   }
@@ -160,10 +165,30 @@ function cleanDomSnapshotForSummary(domSnapshot: any): any {
     }));
   }
   
-  // Increased link limit from 10 to 30
-  if (Array.isArray(cleanSnapshot.links) && cleanSnapshot.links.length > 30) {
-    cleanSnapshot.links = cleanSnapshot.links.slice(0, 30);
-    cleanSnapshot.links.push(`...and ${domSnapshot.links.length - 30} more links`);
+  // Process links - handle new link format and increase limit to 30
+  if (Array.isArray(cleanSnapshot.links)) {
+    // If links are in the new format (objects with text and url properties), keep them that way
+    const isNewLinkFormat = cleanSnapshot.links.length > 0 && 
+                           typeof cleanSnapshot.links[0] === 'object' && 
+                           'url' in cleanSnapshot.links[0];
+    
+    if (isNewLinkFormat) {
+      if (cleanSnapshot.links.length > 30) {
+        const omittedCount = cleanSnapshot.links.length - 30;
+        cleanSnapshot.links = cleanSnapshot.links.slice(0, 30);
+        cleanSnapshot.links.push({
+          text: `...and ${omittedCount} more links`,
+          url: '',
+          title: null,
+          aria: null
+        });
+      }
+    } 
+    // Handle old format (strings)
+    else if (cleanSnapshot.links.length > 30) {
+      cleanSnapshot.links = cleanSnapshot.links.slice(0, 30);
+      cleanSnapshot.links.push(`...and ${domSnapshot.links.length - 30} more links`);
+    }
   }
   
   return cleanSnapshot;

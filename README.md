@@ -1,4 +1,4 @@
-# Agentic AI Browser
+Collecting workspace information# Agentic AI Browser
 
 ## Overview
 This project is a **sophisticated, AI-driven web automation agent** that uses **Playwright** for browser interactions and **LLM integration** for intelligent decision-making. It's designed for **reliable, adaptable web automation** with robust element detection and contextual understanding.
@@ -11,6 +11,9 @@ This project is a **sophisticated, AI-driven web automation agent** that uses **
 - **Context-Aware Interaction** – Maintains task history and adapts based on successes and failures
 - **Fully Containerized** – Supports **Docker & Docker Compose** for easy deployment
 - **Multi-LLM Support** – Works with both **Gemini** and **Ollama** models for flexibility
+- **Improved Resilience** – Enhanced retry logic with increased attempt limits
+- **Agent State Management** – Track and control agent execution state
+- **Manual Intervention** – Ask for human help when the agent is stuck
 
 ---
 
@@ -23,7 +26,7 @@ Ensure you have the following installed:
 
 ### 2️⃣ Clone the Repository
 ```sh
-git clone https://github.com/your-username/agentic-ai-browser.git
+git clone https://github.com/esinecan/agentic-ai-browser.git
 cd agentic-ai-browser
 ```
 
@@ -31,7 +34,7 @@ cd agentic-ai-browser
 Create a .env file in the root directory:
 ```ini
 HEADLESS=false
-START_URL=https://www.google.com
+START_URL=https://www.INTERNET.COM
 LOG_DIR=./logs
 SCREENSHOT_DIR=./screenshots
 LLM_PROVIDER=gemini  # or ollama
@@ -74,14 +77,19 @@ docker-compose up --build -d
 - package.json: Contains the project dependencies
 - tsconfig.json: TypeScript configuration file
 - src: Contains the source code for the agent
-  - `automation.ts`: Core automation logic and execution flow
+  - automation.ts: Core automation logic and execution flow
   - `browserExecutor.ts`: Executes browser actions using Playwright
   - `pageInterpreter.ts`: Analyzes and summarizes web pages for the LLM
   - `successPatterns.ts`: Tracks successful interaction patterns
   - `index.ts`: Entry point for the application
   - `llmProcessor.ts`: Abstraction layer for LLM integration
-  - `llmProcessorGemini.ts`: Gemini-specific implementation
+  - llmProcessorGemini.ts: Gemini-specific implementation (using gemini-2.0-flash)
   - `llmProcessorOllama.ts`: Ollama-specific implementation
+  - `actionExtractor.ts`: Handles normalization and extraction of actions
+  - `utils/agentState.js`: Manages the state of the automation agent
+- data: Contains reference data like success patterns
+- logs: Stores execution logs with timestamps
+- screenshots: Stores screenshots taken during automation
 
 ---
 
@@ -104,11 +112,17 @@ Each action is executed with robust verification:
 - Inputs are **validated** after entry with alternative strategies if needed
 - Navigation confirms **URL change** and page load completion
 - Automatic recovery with alternative selectors when primary ones fail
+- Enhanced resilience with increased retry attempts
+
+### **4️⃣ Agent Control**
+- Stop the agent execution at any time with the `stopAgent()` function
+- Request human intervention when the agent is stuck
+- Agent state tracking for better control and monitoring
 
 ---
 
 ## Troubleshooting & Logs
-- Logs are stored in logs (or logs locally)
+- Logs are stored in logs directory with timestamps
 - Screenshots are saved to screenshots on failures
 - Page state snapshots are recorded before each action
 - To debug with visual browser:
@@ -123,6 +137,7 @@ HEADLESS=false npm run dev
 The agent supports multiple LLM backends:
 
 ### Gemini
+Using the advanced gemini-2.0-flash model:
 ```ini
 LLM_PROVIDER=gemini
 GEMINI_API_KEY=your-key-here
@@ -142,6 +157,8 @@ OLLAMA_MODEL=llama3
 ✅ **Action verification (DONE)**
 ✅ **Intelligent page interpretation (DONE)**
 ✅ **Multi-LLM support (DONE)**
+✅ **Agent state management (DONE)**
+✅ **Manual intervention capabilities (DONE)**
 🔜 **Workflow recording & replay**
 🔜 **Support for API-based automation**
 🔜 **Multi-tab and window handling**

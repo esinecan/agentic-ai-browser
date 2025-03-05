@@ -629,12 +629,16 @@ export async function getPageState(page: Page): Promise<object> {
           ].map(i => 
             i.id || i.name || i.getAttribute('placeholder') || i.getAttribute('type') || i.tagName.toLowerCase()
           ),
-          links: Array.from(document.querySelectorAll("a")).map(a =>
-            getFullText(a)
-          ),
+          // Enhance links to include both text AND URLs
+          links: Array.from(document.querySelectorAll("a")).map(a => ({
+            text: getFullText(a),
+            url: a.href,
+            title: a.title || null,
+            aria: a.getAttribute('aria-label') || null
+          })),
           landmarks: Array.from(document.querySelectorAll("[role]")).map(el => ({
             role: el.getAttribute("role"),
-            text: getFullText(el), // Don't truncate here
+            text: getFullText(el),
           })),
           // Full page content - essential for understanding context
           pageContent: getMainContent(),
