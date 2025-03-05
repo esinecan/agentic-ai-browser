@@ -8,12 +8,11 @@ dotenv.config();
 // Use a lightweight model for page summarization to keep it fast
 // We're reusing Ollama but configuring it with a smaller/faster model
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://host.docker.internal:11434';
-const SUMMARY_MODEL = process.env.SUMMARY_MODEL || "granite3-dense:latest"; // Using a smaller model by default
+const SUMMARY_MODEL = process.env.SUMMARY_MODEL || "marco-o1"; // Using a smaller model by default
 
 const summaryModel = new ChatOllama({
   baseUrl: OLLAMA_HOST,
-  model: SUMMARY_MODEL,
-  temperature: 0.1, // Lower temperature for more factual responses
+  model: SUMMARY_MODEL
 });
 
 /**
@@ -24,11 +23,13 @@ export async function generatePageSummary(domSnapshot: any): Promise<string> {
     // Clean the DOM snapshot before sending it to the model
     const cleanSnapshot = cleanDomSnapshotForSummary(domSnapshot);
     
-    const prompt = `
-     **You are an AI model that processes a raw JSON DOM and removes unnecessary elements while keeping the structure intact. Your goal is to filter out irrelevant elements and retain only the most meaningful text-based and interactive elements, while ensuring that the output follows the same DOM object format.**
+    /*const prompt = `
+     **This is the DOM content of a web page:**
         ---
-        ### **Rules for Simplification:**  
-
+        ${JSON.stringify(cleanSnapshot, null, 2)}
+        ---
+        Here is what you need to do:
+        **CREATE A SHORTER JSON OBJECT**
         #### **1. Keep Important Elements & Their Fields**  
         - **Headings ('h1'-'h3')** → Retain if they contain meaningful text.  
         - **Divs and Spans ('div', 'span')** → Examine carefully and keep if they contain useful information.
@@ -47,10 +48,10 @@ export async function generatePageSummary(domSnapshot: any): Promise<string> {
         - **Do not modify field names** (e.g., 'buttons', 'inputs', 'links').  
         - **Do not restructure the object**—just remove unwanted elements.  
         - **Ensure that the output format matches the input, minus unnecessary content.** 
-      
-      DOM snapshot: ${JSON.stringify(cleanSnapshot, null, 2)}
-      
-      Your concise page description:
+    
+        ---
+        **Once you have cleaned up the DOM snapshot, paste the updated JSON object here. Remember to preserve meaningful text**
+     (you don't need to explain your changes. we trust you "blindly" 😄):
     `;
     
       console.log("-------------------");
@@ -79,7 +80,8 @@ export async function generatePageSummary(domSnapshot: any): Promise<string> {
       return "No summary available.";
     }
     
-    return summaryText;
+    return summaryText;*/
+    return cleanSnapshot;
   } catch (error) {
     console.error("Error generating page summary:", error);
     return "Error generating page summary.";
@@ -148,20 +150,20 @@ function cleanDomSnapshotForSummary(domSnapshot: any): any {
   // Create a clean copy
   const cleanSnapshot = { ...domSnapshot };
   
-  // Clean landmarks
+  // Clean landmarks - increased from 50 to 500 characters
   if (Array.isArray(cleanSnapshot.landmarks)) {
     cleanSnapshot.landmarks = cleanSnapshot.landmarks.map((landmark: any) => ({
       role: landmark.role,
       text: landmark.text && typeof landmark.text === 'string'
-        ? (landmark.text.length > 50 ? landmark.text.substring(0, 50) + "..." : landmark.text)
+        ? (landmark.text.length > 500 ? landmark.text.substring(0, 500) + "..." : landmark.text)
         : null
     }));
   }
   
-  // Limit the number of links to prevent overwhelming the model
-  if (Array.isArray(cleanSnapshot.links) && cleanSnapshot.links.length > 10) {
-    cleanSnapshot.links = cleanSnapshot.links.slice(0, 10);
-    cleanSnapshot.links.push(`...and ${domSnapshot.links.length - 10} more links`);
+  // Increased link limit from 10 to 30
+  if (Array.isArray(cleanSnapshot.links) && cleanSnapshot.links.length > 30) {
+    cleanSnapshot.links = cleanSnapshot.links.slice(0, 30);
+    cleanSnapshot.links.push(`...and ${domSnapshot.links.length - 30} more links`);
   }
   
   return cleanSnapshot;

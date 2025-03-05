@@ -1,8 +1,10 @@
+import './utils/logger.js'; // Add this at the top to initialize logging
 import dotenv from "dotenv";
 import { runGraph, stopAgent } from "./automation.js";
 import { Page } from "playwright";
 import fs from 'fs';
 import readline from 'readline';
+import { closeLogger, logFilePath } from './utils/logger.js'; // Import the close function
 
 dotenv.config();
 
@@ -10,6 +12,7 @@ dotenv.config();
 process.on('SIGINT', async () => {
   console.log('\nCtrl+C detected. Requesting agent to stop gracefully...');
   await stopAgent();
+  closeLogger(); // Close the logger
   // Don't exit immediately - let the agent handle cleanup
 });
 
@@ -25,6 +28,7 @@ process.stdin.on('keypress', async (str, key) => {
   if (key.name === 'q') {
     console.log('\nStop key pressed. Requesting agent to stop gracefully...');
     await stopAgent();
+    closeLogger(); // Close the logger
   }
 });
 
@@ -40,8 +44,10 @@ if (process.stdin.isTTY) {
     await runGraph();
   } catch (error) {
     console.error("Fatal error:", error);
+    closeLogger(); // Close the logger on error
     process.exit(1);
   } finally {
+    closeLogger(); // Make sure logger is closed
     // Clean up the readline interface
     rl.close();
   }
