@@ -9,8 +9,9 @@ import fs from 'fs';
 import path from 'path';
 import { SuccessPatterns } from './successPatterns.js';
 import { generatePageSummary, extractInteractiveElements } from './pageInterpreter.js';
+import { getAgentState } from './utils/agentState.js';
 
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 7;
 const MAX_REPEATED_ACTIONS = 3; // Number of repeated actions before forced change
 
 // Create a proper LLMProcessor object for Gemini
@@ -282,6 +283,83 @@ interface PageState {
   domSnapshot: any;
 }
 
+// Extract the askHuman handler to a standalone function
+async function askHumanHandler(ctx: GraphContext): Promise<string> {
+  if (!ctx.page || !ctx.action) throw new Error("Invalid context");
+  
+  try {
+    // Your existing askHuman implementation
+    // Store page state before human interaction
+    const beforeHelpState = {
+      url: ctx.page.url(),
+      title: await ctx.page.title()
+    };
+    
+    // Take a screenshot to show the current state
+    const screenshotDir = process.env.SCREENSHOT_DIR || "./screenshots";
+    const screenshotPath = path.join(screenshotDir, `human-help-${Date.now()}.png`);
+    await fs.promises.mkdir(path.dirname(screenshotPath), { recursive: true });
+    await ctx.page.screenshot({ path: screenshotPath });
+    
+    // Use the question provided by the model or fall back to a default
+    const question = ctx.action.question || 
+      `I've tried ${ctx.retries} times but keep failing. The page title is "${await ctx.page.title()}". What should I try next?`;
+    
+    // ENHANCED: Include more context from the page
+    let pageInfo = "";
+    try {
+      // Extract main content or title to give context
+      pageInfo = await ctx.page.evaluate(() => {
+        const mainContent = document.querySelector('main, article, #readme')?.textContent?.trim();
+        return mainContent ? mainContent.substring(0, 500) : document.title;
+      });
+    } catch (err) {
+      console.error("Failed to extract page context:", err);
+    }
+    
+    // Format the question with context
+    const formattedQuestion = `
+AI needs your help (screenshot saved to ${screenshotPath}):
+
+${question}
+
+Current URL: ${ctx.page.url()}
+Current task: ${ctx.userGoal}
+Recent actions: ${ctx.history.slice(-3).join("\n")}
+${pageInfo ? `\nPage context: ${pageInfo}...\n` : ''}
+
+Your guidance:`;
+    
+    // Get human input
+    console.log("\n\n=== ASKING FOR HUMAN HELP ===");
+    const humanResponse = await promptUser(formattedQuestion);
+    console.log("=== RECEIVED HUMAN RESPONSE ===\n\n");
+    
+    // Save the response to context for the LLM to use - make it prominent in the feedback
+    ctx.actionFeedback = `👤 HUMAN ASSISTANCE: ${humanResponse}`;
+    
+    // Add to history logs
+    ctx.history.push(`Asked human: "${question.substring(0, 50)}${question.length > 50 ? '...' : ''}"`);
+    ctx.history.push(`Human response: "${humanResponse.substring(0, 50)}${humanResponse.length > 50 ? '...' : ''}"`);
+    
+    // After getting human response, check if page changed
+    const currentUrl = ctx.page.url();
+    if (currentUrl !== beforeHelpState.url) {
+      ctx.history.push(`Note: Page changed during human interaction from "${beforeHelpState.url}" to "${currentUrl}"`);
+      // Reset accumulated state since we're on a new page
+      ctx.retries = 0;
+    }
+    
+    // Reset retries since human helped
+    ctx.retries = 0;
+    
+    return "chooseAction";
+  } catch (error) {
+    ctx.history.push(`Human interaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    return "handleFailure";
+  }
+}
+
 // Define our state functions in an object keyed by state name.
 const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
   start: async (ctx: GraphContext) => {
@@ -301,20 +379,32 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
     // Initialize milestones
     initializeMilestones(ctx);
     
+    // Reset the agent state
+    const agentState = getAgentState();
+    agentState.clearStop();
+    
     return "chooseAction";
   },
   chooseAction: async (ctx: GraphContext) => {
+    // First check for stop request
+    const agentState = getAgentState();
+    if (agentState.isStopRequested()) {
+      ctx.history.push("Stop requested by user");
+      return "terminate";
+    }
+    
     if (!ctx.page) throw new Error("Page not initialized");
     const stateSnapshot = await getPageState(ctx.page) as PageState;
+    
+    // Store the current valid state in the AgentState
+    agentState.setLastValidState(stateSnapshot);
     
     // Get AI-generated page summary
     try {
       ctx.pageSummary = await generatePageSummary(stateSnapshot.domSnapshot);
-      //console.log("Page summary:", ctx.pageSummary);
       
       // Get interactive elements
       ctx.interactiveElements = extractInteractiveElements(stateSnapshot.domSnapshot);
-      //console.log("Interactive elements:", ctx.interactiveElements);
     } catch (error) {
       console.error("Error generating page summary:", error);
     }
@@ -451,77 +541,23 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
       }
     }
     
-    // Check if the state exists first
+    // Check if the state exists first (ADD LOWERCASE COMPARISON)
+    const actionTypeLower = actionType.toLowerCase();
     if (states[actionType]) {
       return actionType;
+    } else if (states[actionTypeLower]) {
+      // Case-insensitive match found
+      ctx.history.push(`Using case-insensitive action type: ${actionTypeLower}`);
+      return actionTypeLower;
     } else {
       ctx.history.push(`Action type "${actionType}" not supported. Using fallback.`);
       return "handleFailure";
     }
   },
   
-  // New state handler for askHuman action
-  askHuman: async (ctx: GraphContext) => {
-    if (!ctx.page || !ctx.action) throw new Error("Invalid context");
-    
-    try {
-      // Store page state before human interaction
-      const beforeHelpState = {
-        url: ctx.page.url(),
-        title: await ctx.page.title()
-      };
-      
-      // Take a screenshot to show the current state
-      const screenshotDir = process.env.SCREENSHOT_DIR || "./screenshots";
-      const screenshotPath = path.join(screenshotDir, `human-help-${Date.now()}.png`);
-      await fs.promises.mkdir(path.dirname(screenshotPath), { recursive: true });
-      await ctx.page.screenshot({ path: screenshotPath });
-      
-      // Use the question provided by the model or fall back to a default
-      const question = ctx.action.question || 
-        `I've tried ${ctx.retries} times but keep failing. The page title is "${await ctx.page.title()}". What should I try next?`;
-      
-      // Format the question with context
-      const formattedQuestion = `
-AI needs your help (screenshot saved to ${screenshotPath}):
-
-${question}
-
-Current URL: ${ctx.page.url()}
-Current task: ${ctx.userGoal}
-Recent actions: ${ctx.history.slice(-3).join("\n")}
-
-Your guidance:`;
-      
-      // Get human input
-      console.log("\n\n=== ASKING FOR HUMAN HELP ===");
-      const humanResponse = await promptUser(formattedQuestion);
-      console.log("=== RECEIVED HUMAN RESPONSE ===\n\n");
-      
-      // Save the response to context for the LLM to use - make it prominent in the feedback
-      ctx.actionFeedback = `👤 HUMAN ASSISTANCE: ${humanResponse}`;
-      
-      // Add to history logs
-      ctx.history.push(`Asked human: "${question.substring(0, 50)}${question.length > 50 ? '...' : ''}"`);
-      ctx.history.push(`Human response: "${humanResponse.substring(0, 50)}${humanResponse.length > 50 ? '...' : ''}"`);
-      
-      // After getting human response, check if page changed
-      const currentUrl = ctx.page.url();
-      if (currentUrl !== beforeHelpState.url) {
-        ctx.history.push(`Note: Page changed during human interaction from "${beforeHelpState.url}" to "${currentUrl}"`);
-        // Reset accumulated state since we're on a new page
-        ctx.retries = 0;
-      }
-      
-      // Reset retries since human helped
-      ctx.retries = 0;
-      
-      return "chooseAction";
-    } catch (error) {
-      ctx.history.push(`Human interaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      return "handleFailure";
-    }
-  },
+  // Use the extracted function for both cases
+  askHuman: askHumanHandler,
+  askhuman: askHumanHandler, // This is now valid since we're using a pre-defined function
   
   click: async (ctx: GraphContext) => {
     if (!ctx.page || !ctx.action) throw new Error("Invalid context");
@@ -833,10 +869,13 @@ Your guidance:`;
   },
   terminate: async (ctx: GraphContext) => {
     ctx.history.push("Session ended");
-    //console.log("Execution history:", ctx.history);
+    
+    // Clear the stop flag
+    const agentState = getAgentState();
+    agentState.clearStop();
+    
     if (ctx.browser) {
       await ctx.browser.close();
-      //console.log("Browser closed successfully");
     }
     return "terminated";
   },
@@ -856,7 +895,7 @@ Your guidance:`;
     checkMilestones(ctx, stateSnapshot);
     
     return "chooseAction";
-  }
+  },
 };
 
 // A simple state-machine runner that loops until the state "terminated" is reached.
@@ -868,6 +907,24 @@ async function runStateMachine(ctx: GraphContext): Promise<void> {
   let successActionCount = 0;
   
   while (currentState !== "terminated") {
+    // Check for stop request at the beginning of each cycle
+    const agentState = getAgentState();
+    if (agentState.isStopRequested()) {
+      ctx.history.push("Stop requested by user during state machine execution");
+      currentState = "terminate";
+      continue;
+    }
+    
+    // Store current valid state in case of emergency stop
+    if (ctx.page) {
+      try {
+        const stateSnapshot = await getPageState(ctx.page);
+        agentState.setLastValidState(stateSnapshot);
+      } catch (error) {
+        console.error("Failed to capture state for emergency stop handling:", error);
+      }
+    }
+    
     if (!(currentState in states)) {
       // Handle undefined states gracefully instead of throwing an error
       const validStates = Object.keys(states).join(", ");
@@ -885,7 +942,6 @@ async function runStateMachine(ctx: GraphContext): Promise<void> {
       if (totalActionCount % 5 === 0) {
         const successRate = (successActionCount / totalActionCount) * 100;
         const progressBar = '='.repeat(Math.floor(successRate / 10)) + '-'.repeat(10 - Math.floor(successRate / 10));
-        //console.log(`Progress: [${progressBar}] ${successRate.toFixed(1)}% success rate`);
         
         if (successRate > 70) {
           //console.log(`🌟 You're doing great! Keep up the good work!`);
@@ -901,7 +957,6 @@ async function runStateMachine(ctx: GraphContext): Promise<void> {
 export async function runGraph(): Promise<void> {
   // Prompt the user for their automation goal
   const userGoal = await promptUser("Please enter your goal for this automation: ");
-  //console.log(`Starting automation with goal: ${userGoal}`);
   
   // Initialize context with user goal and history
   const ctx: GraphContext = { 
@@ -915,4 +970,11 @@ export async function runGraph(): Promise<void> {
   };
   
   await runStateMachine(ctx);
+}
+
+// Add a new exported function to force stop the agent
+export async function stopAgent(): Promise<void> {
+  const agentState = getAgentState();
+  agentState.requestStop();
+  console.log("Stop request has been registered");
 }

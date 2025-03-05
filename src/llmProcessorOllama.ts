@@ -11,9 +11,7 @@ const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://host.docker.internal:1143
 
 const ollama = new ChatOllama({
   baseUrl: OLLAMA_HOST,
-  model: "llama3.2:latest", // Use the default model name
-  temperature: 0.3,
-  format: "json"
+  model: "phi4-mini"
 });
 
 export const ollamaProcessor: LLMProcessor = {
@@ -81,9 +79,6 @@ Next action:
       console.log("\n MAIN SLM PROMPT:\n" + prompt + "\n");
       console.log("-------------------");
       const response = await ollama.invoke(prompt);
-      console.log("-------------------");
-      console.log("\n MAIN SLM RESPONSE:\n" + JSON.stringify(response, null, 2) + "\n");
-      console.log("-------------------");
       
       // Extract text from the response content
       let responseContent = '';
@@ -101,6 +96,9 @@ Next action:
         }
       }
 
+      console.log("-------------------");
+      console.log("\n MAIN SLM RESPONSE:\n" + responseContent + "\n");
+      console.log("-------------------");
       if (!responseContent) {
         console.error("Failed to extract text content from LLM response");
         return null;

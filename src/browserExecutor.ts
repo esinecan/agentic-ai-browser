@@ -95,7 +95,7 @@ export async function launchBrowser(): Promise<Browser> {
 // Create a new page and navigate to the starting URL.
 export async function createPage(browser: Browser): Promise<Page> {
   const page = await browser.newPage();
-  const startUrl = process.env.START_URL || "https://google.com";
+  const startUrl = process.env.START_URL || "https://INTERNET.COM";
   await page.goto(startUrl);
   return page;
 }
@@ -529,21 +529,17 @@ export async function findBestMatch(
 function cleanDomSnapshot(snapshot: any): any {
   if (!snapshot) return {};
 
+  // Only truncate if absolutely necessary for memory constraints
   return {
     buttons: snapshot.buttons,
     inputs: snapshot.inputs,
-    links: Array.isArray(snapshot.links) && snapshot.links.length > 10 
-      ? [...snapshot.links.slice(0, 10), `...and ${snapshot.links.length - 10} more links`] 
-      : snapshot.links,
+    links: snapshot.links, // Don't truncate here
     landmarks: Array.isArray(snapshot.landmarks) 
-      ? snapshot.landmarks.map((landmark: any) => ({
-          role: landmark.role,
-          text: landmark.text && typeof landmark.text === 'string'
-            ? (landmark.text.length > 50 ? landmark.text.substring(0, 50) + "..." : landmark.text)
-            : null
-        }))
+      ? snapshot.landmarks // Don't truncate text here
       : [],
-    // Add semantic information about the page
+    headings: snapshot.headings,
+    pageContent: snapshot.pageContent?.substring(0, 5000) + (snapshot.pageContent?.length > 5000 ? "..." : ""),
+    forms: snapshot.forms,
     visibleFields: extractVisibleFields(snapshot)
   };
 }
@@ -602,40 +598,70 @@ export async function getPageState(page: Page): Promise<object> {
     const rawState = {
       url: page.url(),
       title: await page.title(),
-      domSnapshot: await page.evaluate(() => ({
-        buttons: Array.from(document.querySelectorAll("button")).map((b) =>
-          b.textContent?.trim()
-        ),
-        inputs: [
-          ...Array.from(document.querySelectorAll("input")),
-          ...Array.from(document.querySelectorAll("textarea"))
-        ].map((i) => 
-          i.id || i.name || i.getAttribute('placeholder') || i.getAttribute('type') || i.tagName.toLowerCase()
-        ),
-        links: Array.from(document.querySelectorAll("a")).map((a) =>
-          a.textContent?.trim()
-        ),
-        landmarks: Array.from(document.querySelectorAll("[role]")).map((el) => ({
-          role: el.getAttribute("role"),
-          text: el.textContent?.trim(),
-        })),
-        // Additional semantic extraction
-        forms: Array.from(document.querySelectorAll("form")).map((f) => ({
-          id: f.id,
-          action: f.action,
-          method: f.method,
-          elements: Array.from(f.elements).length
-        }))
-      }))
+      domSnapshot: await page.evaluate(() => {
+        // Helper function to safely get FULL text content
+        const getFullText = (element: Element | null) => {
+          if (!element || !element.textContent) return null;
+          return element.textContent.trim();
+        };
+        
+        // Get main content using serialization for completeness
+        const getMainContent = () => {
+          // Try to get content from main semantic elements first
+          const mainElement = document.querySelector('main') || 
+                           document.querySelector('article') || 
+                           document.querySelector('#content') || 
+                           document.querySelector('.content');
+          
+          if (mainElement) return getFullText(mainElement);
+          
+          // If no semantic elements found, get body content
+          return getFullText(document.body);
+        };
+        
+        return {
+          buttons: Array.from(document.querySelectorAll("button")).map(b =>
+            getFullText(b)
+          ),
+          inputs: [
+            ...Array.from(document.querySelectorAll("input")),
+            ...Array.from(document.querySelectorAll("textarea"))
+          ].map(i => 
+            i.id || i.name || i.getAttribute('placeholder') || i.getAttribute('type') || i.tagName.toLowerCase()
+          ),
+          // Enhance links to include both text AND URLs
+          links: Array.from(document.querySelectorAll("a")).map(a => ({
+            text: getFullText(a),
+            url: a.href,
+            title: a.title || null,
+            aria: a.getAttribute('aria-label') || null
+          })),
+          landmarks: Array.from(document.querySelectorAll("[role]")).map(el => ({
+            role: el.getAttribute("role"),
+            text: getFullText(el),
+          })),
+          // Full page content - essential for understanding context
+          pageContent: getMainContent(),
+          // Keep additional semantic extraction
+          forms: Array.from(document.querySelectorAll("form")).map(f => ({
+            id: f.id,
+            action: f.action,
+            method: f.method,
+            elements: Array.from(f.elements).length
+          })),
+          // Add headings for better page structure understanding
+          headings: [
+            ...Array.from(document.querySelectorAll("h1")).map(h => ({ level: 1, text: getFullText(h) })),
+            ...Array.from(document.querySelectorAll("h2")).map(h => ({ level: 2, text: getFullText(h) })),
+            ...Array.from(document.querySelectorAll("h3")).map(h => ({ level: 3, text: getFullText(h) }))
+          ]
+        };
+      })
     };
     
-    // Clean the DOM snapshot
-    const cleanSnapshot = {
-      ...rawState,
-      domSnapshot: cleanDomSnapshot(rawState.domSnapshot)
-    };
-    
-    return cleanSnapshot;
+    // Don't clean the DOM snapshot here - pass the raw data through
+    // and let pageInterpreter handle the cleaning for its specific use case
+    return rawState;
 }  
 
 // Verify that an action succeeded based on its type.
@@ -753,4 +779,35 @@ function findRepeatedPatterns(history: string[]): { pattern: string, count: numb
     .map(([pattern, stats]) => ({ pattern, count: stats.count, success: stats.success }))
     .filter(p => p.count > 1) // Only return patterns that occurred more than once
     .sort((a, b) => b.count - a.count);
+}
+
+// In the navigate action handler function
+export async function navigate(page: Page, url: string): Promise<boolean> {
+  try {
+    // Check if the URL is relative and make it absolute if necessary
+    if (url.startsWith('/') && page.url()) {
+      try {
+        const currentUrl = new URL(page.url());
+        url = `${currentUrl.origin}${url}`;
+        console.log(`Converted relative URL to absolute: ${url}`);
+      } catch (err) {
+        console.error("Failed to parse current URL:", err);
+      }
+    }
+    
+    // Validate URL before navigation
+    try {
+      new URL(url);
+    } catch (e) {
+      console.error(`Invalid URL: ${url}`);
+      return false;
+    }
+    
+    // Now proceed with the navigation
+    await page.goto(url, { timeout: DEFAULT_NAVIGATION_TIMEOUT });
+    return true;
+  } catch (error) {
+    console.error(`Navigation failed: ${error}`);
+    return false;
+  }
 }

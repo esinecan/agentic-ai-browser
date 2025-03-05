@@ -1,31 +1,60 @@
+import './utils/logger.js'; // Add this at the top to initialize logging
 import dotenv from "dotenv";
-import { runGraph } from "./automation.js";
+import { runGraph, stopAgent } from "./automation.js";
 import { Page } from "playwright";
-//import path from 'path';
 import fs from 'fs';
+import readline from 'readline';
+import { closeLogger, logFilePath } from './utils/logger.js'; // Import the close function
 
 dotenv.config();
 
+// Setup keyboard event handler for stopping the agent with Ctrl+C
+process.on('SIGINT', async () => {
+  console.log('\nCtrl+C detected. Requesting agent to stop gracefully...');
+  await stopAgent();
+  closeLogger(); // Close the logger
+  // Don't exit immediately - let the agent handle cleanup
+});
+
+// Create a readline interface for handling keypress events
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+
+// Listen for the 'keypress' event
+process.stdin.on('keypress', async (str, key) => {
+  // Check if user pressed 'q'
+  if (key.name === 'q') {
+    console.log('\nStop key pressed. Requesting agent to stop gracefully...');
+    await stopAgent();
+    closeLogger(); // Close the logger
+  }
+});
+
+// Enable keypress events
+if (process.stdin.isTTY) {
+  process.stdin.setRawMode(true);
+}
+
+// Main execution
 (async () => {
   try {
+    console.log("Agent started. Press 'q' or Ctrl+C to stop gracefully.");
     await runGraph();
   } catch (error) {
     console.error("Fatal error:", error);
+    closeLogger(); // Close the logger on error
     process.exit(1);
+  } finally {
+    closeLogger(); // Make sure logger is closed
+    // Clean up the readline interface
+    rl.close();
   }
 })();
 
 export async function getPageState(page: Page): Promise<object> {
   const timestamp = Date.now();
-  //const screenshotDir = process.env.SCREENSHOT_DIR || path.resolve(__dirname, "../screenshots");
- // const screenshotPath = path.resolve(screenshotDir, `screenshot-${timestamp}.png`);
-
-  // Ensure folder exists
-  //await fs.promises.mkdir(path.dirname(screenshotPath), { recursive: true });
-
-  // Take the screenshot without encoding option, returns a Buffer
-  //const screenshotBuffer = await page.screenshot({ path: screenshotPath });
-  //const base64Data = screenshotBuffer.toString("base64");
 
   return {
     url: page.url(),
@@ -38,10 +67,6 @@ export async function getPageState(page: Page): Promise<object> {
         role: el.getAttribute("role"),
         text: el.textContent?.trim(),
       })),
-    }))/*,
-    screenshot: {
-      path: screenshotPath,
-      base64: base64Data,
-    },*/
+    }))
   };
 }
