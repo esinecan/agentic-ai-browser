@@ -1,7 +1,7 @@
 Collecting workspace information# Agentic AI Browser
 
 ## Overview
-This project is a **sophisticated, AI-driven web automation agent** that uses **Playwright** for browser interactions and **LLM integration** for intelligent decision-making. It's designed for **reliable, adaptable web automation** with robust element detection and contextual understanding.
+This project is a **sophisticated (also pretty darn cool), AI-driven web automation agent** that uses **Playwright** for browser interactions and **LLM integration** for intelligent decision-making. It's designed for **reliable, adaptable web automation** with robust element detection and contextual understanding.
 
 ## Features
 - **Agentic Web Automation** – Uses AI to decide and execute actions based on page understanding
