@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { format } from 'util';
+import util from 'util';
 
 // Create logs directory if it doesn't exist
 const logsDir = path.join(process.cwd(), 'logs');
@@ -10,61 +10,136 @@ if (!fs.existsSync(logsDir)) {
 
 // Create a timestamped log filename
 const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-const logFilePath = path.join(logsDir, `agent-${timestamp}.log`);
+export const logFilePath = path.join(logsDir, `agent-${timestamp}.log`);
 const logStream = fs.createWriteStream(logFilePath, { flags: 'a' });
 
-// Store original console methods
-const originalConsole = {
-  log: console.log,
-  error: console.error,
-  warn: console.warn,
-  info: console.info,
-  debug: console.debug
-};
+// Configuration for logging levels
+const LOG_LEVELS = {
+  DEBUG: 0,
+  INFO: 1,
+  WARN: 2,
+  ERROR: 3
+} as const;
 
-// Override console methods to write to both console and file
-console.log = function (...args: any[]) {
-  const formattedMessage = format(...args);
-  logStream.write(`[LOG] ${formattedMessage}\n`);
-  originalConsole.log(...args);
-};
+type LogLevel = keyof typeof LOG_LEVELS;
+let currentLogLevel: number = LOG_LEVELS.INFO; // Default log level
 
-console.error = function (...args: any[]) {
-  const formattedMessage = format(...args);
-  logStream.write(`[ERROR] ${formattedMessage}\n`);
-  originalConsole.error(...args);
-};
-
-console.warn = function (...args: any[]) {
-  const formattedMessage = format(...args);
-  logStream.write(`[WARN] ${formattedMessage}\n`);
-  originalConsole.warn(...args);
-};
-
-console.info = function (...args: any[]) {
-  const formattedMessage = format(...args);
-  logStream.write(`[INFO] ${formattedMessage}\n`);
-  originalConsole.info(...args);
-};
-
-console.debug = function (...args: any[]) {
-  const formattedMessage = format(...args);
-  logStream.write(`[DEBUG] ${formattedMessage}\n`);
-  originalConsole.debug(...args);
-};
-
-// Add timestamp to logs
-const addTimestamp = () => {
-  return `[${new Date().toISOString()}]`;
-};
-
-// Add a close method to properly close the log file
-export function closeLogger(): boolean {
-  console.log(`${addTimestamp()} Closing log file: ${logFilePath}`);
-  logStream.end();
-  return true;
+// Utility to format objects for logging
+function formatData(data: any): string {
+  if (!data) return '';
+  
+  if (typeof data === 'string') return data;
+  
+  try {
+    // Handle Error objects specially
+    if (data instanceof Error) {
+      return `${data.message}\n${data.stack}`;
+    }
+    
+    // For other objects, use util.inspect for better formatting
+    return util.inspect(data, {
+      depth: 4,
+      colors: false,
+      maxArrayLength: 10,
+      breakLength: 120
+    });
+  } catch (err) {
+    return String(data);
+  }
 }
 
-console.log(`${addTimestamp()} Logging started. Output saved to: ${logFilePath}`);
+// Main logging function
+function log(level: LogLevel, message: string, data?: any) {
+  if (LOG_LEVELS[level] < currentLogLevel) return;
 
-export { logFilePath };
+  const timestamp = new Date().toISOString();
+  const formattedData = data ? '\n' + formatData(data) : '';
+  const logMessage = `[${timestamp}] [${level}] ${message}${formattedData}\n`;
+
+  // Write to file
+  logStream.write(logMessage);
+
+  // Write to console with colors
+  const consoleMsg = `[${timestamp}] ${getColorForLevel(level)}[${level}]\x1b[0m ${message}`;
+  if (level === 'ERROR') {
+    console.error(consoleMsg, data ? '\n' + formattedData : '');
+  } else {
+    console.log(consoleMsg, data ? '\n' + formattedData : '');
+  }
+}
+
+// Get ANSI color code for log level
+function getColorForLevel(level: LogLevel): string {
+  switch (level) {
+    case 'DEBUG': return '\x1b[90m'; // Gray
+    case 'INFO': return '\x1b[32m';  // Green
+    case 'WARN': return '\x1b[33m';  // Yellow
+    case 'ERROR': return '\x1b[31m'; // Red
+    default: return '\x1b[0m';       // Reset
+  }
+}
+
+// Convenience logging methods
+export const logger = {
+  debug: (msg: string, data?: any) => log('DEBUG', msg, data),
+  info: (msg: string, data?: any) => log('INFO', msg, data),
+  warn: (msg: string, data?: any) => log('WARN', msg, data),
+  error: (msg: string, data?: any) => log('ERROR', msg, data),
+  
+  // Log state transitions with special formatting
+  transition: (state: string, data?: any) => {
+    log('INFO', `State Transition: ${state}`, data);
+  },
+  
+  // Log LLM interactions
+  llm: {
+    request: (provider: string, data: any) => {
+      log('DEBUG', `${provider} Request`, {
+        timestamp: new Date().toISOString(),
+        ...data
+      });
+    },
+    response: (provider: string, data: any) => {
+      log('DEBUG', `${provider} Response`, {
+        timestamp: new Date().toISOString(),
+        ...data
+      });
+    },
+    error: (provider: string, error: any) => {
+      log('ERROR', `${provider} Error`, {
+        timestamp: new Date().toISOString(),
+        error
+      });
+    }
+  },
+  
+  // Log browser actions
+  browser: {
+    action: (type: string, data: any) => {
+      log('INFO', `Browser Action: ${type}`, data);
+    },
+    error: (type: string, error: any) => {
+      log('ERROR', `Browser Error: ${type}`, error);
+    }
+  },
+  
+  // Configuration methods
+  setLevel: (level: LogLevel) => {
+    currentLogLevel = LOG_LEVELS[level];
+    log('INFO', `Log level set to ${level}`);
+  },
+  
+  // Clean up method
+  close: () => {
+    log('INFO', 'Closing logger');
+    logStream.end();
+  }
+};
+
+// Handle process termination
+process.on('exit', () => logger.close());
+process.on('SIGINT', () => logger.close());
+process.on('SIGTERM', () => logger.close());
+
+// Export the logger instance
+export default logger;

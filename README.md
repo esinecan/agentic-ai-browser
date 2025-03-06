@@ -32,7 +32,7 @@ cd agentic-ai-browser
 Create a .env file in the root directory:
 ```ini
 HEADLESS=false
-START_URL=https://www.INTERNET.COM
+START_URL=https://www.you.com
 LOG_DIR=./logs
 SCREENSHOT_DIR=./screenshots
 LLM_PROVIDER=gemini  # or ollama

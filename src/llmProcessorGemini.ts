@@ -3,100 +3,211 @@ dotenv.config();
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GraphContext } from "./browserExecutor.js";
 import { ActionExtractor } from "./actionExtractor.js";
+import { LLMProcessor } from "./llmProcessor.js";
+import logger from './utils/logger.js';
 
 const apiKey = process.env.GEMINI_API_KEY || "default_api_key";
 if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not defined. Please set it in your environment variables.");
 }
-const genAI = new GoogleGenerativeAI(apiKey);
 
-// Configure the Gemini model.
-const model = genAI.getGenerativeModel({
-  model: "gemini-2.0-flash",
-  generationConfig: {
-    candidateCount: 1,
-    maxOutputTokens: 8000, // Increased to avoid truncation
-    temperature: 0.7,
-  },
-});
+class GeminiProcessor implements LLMProcessor {
+  private genAI: GoogleGenerativeAI;
+  private model: any;
+  private tokenCount: number = 0;
+  private readonly MAX_TOKENS = 30000; // Gemini-Pro has a larger context window than Ollama
+  private lastResponse: any = null;
 
-// Export a function that implements the generateNextAction method.
-export async function generateNextAction(state: object, context: GraphContext): Promise<GraphContext["action"] | null> {
-  const prompt = `
-You are a web automation assistant using Google Gemini Generative AI.
-${context.userGoal ? `Your goal is to: ${context.userGoal}` : ''}
+  constructor() {
+    this.genAI = new GoogleGenerativeAI(apiKey);
+    this.model = this.genAI.getGenerativeModel({
+      model: "gemini-pro",
+      generationConfig: {
+        maxOutputTokens: 8000,
+        temperature: 0.7,
+      },
+    });
+  }
 
-${context.pageSummary ? `Page Summary: ${context.pageSummary}` : ''}
+  private logPromptContext(context: Record<string, any>) {
+    logger.debug("GEMINI CONTEXT", context);
+  }
 
-${context.actionFeedback ? `${context.actionFeedback}\n` : ''}
+  private buildFeedbackSection(context: GraphContext): string {
+    if (context.actionFeedback) {
+      return `FEEDBACK: ${context.actionFeedback}`;
+    } else if (context.retries && context.retries > 0) {
+      return `ISSUE: Previous ${context.retries} attempts with selector "${context.lastSelector}" failed. Try a different approach.`;
+    } else if (context.lastActionSuccess) {
+      return `SUCCESS: Last action worked! Continue to next step.`;
+    }
+    return '';
+  }
 
-${context.lastActionSuccess 
-  ? `🌟 The last action was SUCCESSFUL! Keep up the good work!` 
-  : context.retries 
-    ? `Previous ${context.retries} attempts with selector "${context.lastSelector}" weren't successful. Let's try a different approach.` 
-    : ''
-}
+  private truncate(text: string | undefined, maxLength: number): string {
+    if (!text || text.length <= maxLength) return text || '';
+    return text.substring(0, maxLength) + '...[content truncated]';
+  }
 
-${context.interactiveElements && context.interactiveElements.length > 0 
-  ? `Interactive elements detected on page:
-${context.interactiveElements.map(el => `- ${el}`).join('\n')}` 
-  : ''}
+  private async processPrompt(prompt: string): Promise<string> {
+    logger.llm.request('Gemini', {
+      modelInfo: {
+        model: "gemini-pro",
+        contextSize: this.lastResponse ? 'Using previous context' : 'New context',
+        tokenCount: this.tokenCount,
+        maxTokens: this.MAX_TOKENS
+      },
+      promptAnalysis: {
+        goal: prompt.match(/TASK: (.*?)\n/)?.[1],
+        url: prompt.match(/URL: (.*?)\n/)?.[1],
+        title: prompt.match(/TITLE: (.*?)\n/)?.[1],
+        feedback: prompt.match(/FEEDBACK: (.*?)\n/)?.[1],
+        historyEntries: prompt.match(/TASK HISTORY:\n([\s\S]*?)$/)?.[1]?.split('\n').length || 0
+      }
+    });
 
-Current page state:
+    const estimatedPromptTokens = Math.ceil(prompt.length / 4);
+    this.tokenCount += estimatedPromptTokens;
+    
+    if (this.tokenCount > this.MAX_TOKENS) {
+      logger.info('Token limit reached, resetting context', {
+        currentTokens: this.tokenCount,
+        limit: this.MAX_TOKENS
+      });
+      this.lastResponse = null;
+      this.tokenCount = estimatedPromptTokens;
+    }
+
+    try {
+      const history = this.lastResponse ? [this.lastResponse] : [];
+      const result = await this.model.generateContent({
+        contents: [...history, { role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          candidateCount: 1,
+          maxOutputTokens: 8000,
+        },
+      });
+
+      const responseText = result.response.text();
+      
+      logger.llm.response('Gemini', {
+        responseLength: responseText.length,
+        content: responseText,
+        hasContext: !!this.lastResponse,
+        contextUpdated: true
+      });
+
+      this.lastResponse = { role: "model", parts: [{ text: responseText }] };
+      return responseText;
+    } catch (error) {
+      logger.llm.error('Gemini', {
+        error,
+        lastResponseSize: this.lastResponse?.parts[0].text.length,
+        tokenCount: this.tokenCount
+      });
+      this.lastResponse = null;
+      this.tokenCount = 0;
+      return "Error communicating with Gemini API";
+    }
+  }
+
+  async generateNextAction(state: object, context: GraphContext): Promise<GraphContext["action"] | null> {
+    try {
+      logger.info('Generating next action', {
+        state: {
+          url: (state as any).url,
+          title: (state as any).title,
+          pageAnalysis: {
+            contentLength: context.pageContent?.length,
+            interactiveElements: context.previousPageState?.interactiveElements?.length
+          }
+        },
+        executionContext: {
+          goal: context.userGoal,
+          lastAction: context.action,
+          retryCount: context.retries,
+          successCount: context.successCount,
+          milestonesAchieved: context.recognizedMilestones,
+          recentHistory: context.history?.slice(-3)
+        }
+      });
+
+      const prompt = `
+You are a web automation assistant using Google Gemini AI.
+${context.userGoal ? `TASK: ${context.userGoal}` : 'Analyze the page and suggest the next action.'}
+
+${this.buildFeedbackSection(context)}
+
+CURRENT PAGE:
 URL: ${(state as any).url}
-Title: ${(state as any).title}
+TITLE: ${(state as any).title}
+
+${context.pageContent ? `PAGE CONTENT:\n${this.truncate(context.pageContent, 6000)}` : ''}
+
+${context.previousPageState?.interactiveElements ? 
+  `Interactive elements detected on page:\n${context.previousPageState.interactiveElements.map((el: any) => `- ${el}`).join('\n')}` : 
+  ''}
 
 ${context.successfulActions && context.successfulActions.length > 0 
-  ? `💡 Actions that have worked well on this site:\n${context.successfulActions.slice(-3).join('\n')}`
-  : ''
-}
+  ? `SUCCESSFUL ACTIONS ON THIS SITE:\n${context.successfulActions.slice(-3).join('\n')}`
+  : ''}
 
 ${context.recognizedMilestones && context.recognizedMilestones.length > 0
   ? `🏆 Milestones achieved: ${context.recognizedMilestones.join(', ')}`
-  : ''
-}
+  : ''}
 
-Available actions:
-Click: { "type": "click", "element": "input[type=text]", "description": "text input field" }
-Input: { "type": "input", "element": "input[type=text]", "value": "search text" }
-Navigate: { "type": "navigate", "value": "https://example.org" }
-Scroll: { "type": "scroll" }
-Extract: { "type": "extract", "element": "div.content" }
-Wait: { "type": "wait", "maxWait": 5000 }
-AskHuman: { "type": "askHuman", "question": "How should I proceed with this form?" }
+AVAILABLE ACTIONS:
+- Click: { "type": "click", "element": "selector", "description": "description" }
+- Input: { "type": "input", "element": "selector", "value": "text" }
+- Navigate: { "type": "navigate", "value": "url" }
+- Wait: { "type": "wait", "maxWait": milliseconds }
+- AskHuman: { "type": "askHuman", "question": "This is your direct line to the human end of this system. Want human to pass a bot check for you? Confused? Saying hi? Succeeded & reporting back? This is the thing to use." }
 
-IMPORTANT: Format your response as a JSON object with a "type" field.
-Always use "type" to specify what action to perform.
-Example: {"type": "input", "element": "input[type=text]", "value": "search query"}
+TASK HISTORY:
+${context.compressedHistory ? context.compressedHistory.slice(-5).join('\n') : 
+  context.history ? context.history.slice(-5).join('\n') : 'No previous actions.'}
 
-When selecting elements, use common CSS selectors (not XPath) and be as general as possible.
-Prefer tag selectors with attributes like: input[type=text], button[type=submit], a[href*="example"]
-Avoid specific classes or IDs that may be dynamic or change across sites.
+Respond with a single JSON object for our next action.`;
 
-Use the askHuman action when you're stuck or unsure about how to proceed.
+      logger.debug('Built Gemini prompt', {
+        promptLength: prompt.length,
+        hasPageContent: !!context.pageContent,
+        hasSuccessfulActions: context.successfulActions?.length ?? 0 > 0,
+        feedback: this.buildFeedbackSection(context)
+      });
 
-Current task context:
-${context.compressedHistory ? context.compressedHistory.join('\n') : context.history.join('\n')}
+      const responseText = await this.processPrompt(prompt);
+      
+      logger.debug('Extracting action from response', {
+        responseLength: responseText.length,
+        responsePreview: responseText.substring(0, 200)
+      });
 
-Next action:
-  `;
-  try {
-    console.log("Calling Gemini API");
-    // Use simple content generation without schema enforcement
-    const result = await model.generateContent(prompt);
-    console.log("Response received: ", JSON.stringify(result, null, 2));
-    const responseText = result.response.text();
-    
-    // Use the ActionExtractor to handle all normalization and extraction
-    const action = ActionExtractor.extract(responseText);
-    
-    if (!action) {
-      console.error("Failed to extract valid action from Gemini response");
+      const action = ActionExtractor.extract(responseText);
+      
+      logger.info('Action extraction completed', {
+        success: !!action,
+        action: action
+      });
+
+      return action;
+    } catch (error) {
+      logger.error('Failed to generate next action', {
+        error,
+        state: {
+          url: (state as any).url,
+          title: (state as any).title
+        },
+        context: {
+          userGoal: context.userGoal,
+          lastAction: context.action
+        }
+      });
+      return null;
     }
-    
-    return action;
-  } catch (error) {
-    console.error("Gemini LLM Error:", error);
-    return null;
   }
 }
+
+// Export a singleton instance
+export const geminiProcessor: LLMProcessor = new GeminiProcessor();

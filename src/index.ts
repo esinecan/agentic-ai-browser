@@ -1,19 +1,29 @@
-import './utils/logger.js'; // Add this at the top to initialize logging
+import './utils/logger.js';
 import dotenv from "dotenv";
 import { runGraph, stopAgent } from "./automation.js";
 import { Page } from "playwright";
-import fs from 'fs';
 import readline from 'readline';
-import { closeLogger, logFilePath } from './utils/logger.js'; // Import the close function
+import logger from './utils/logger.js';
 
 dotenv.config();
 
 // Setup keyboard event handler for stopping the agent with Ctrl+C
 process.on('SIGINT', async () => {
-  console.log('\nCtrl+C detected. Requesting agent to stop gracefully...');
+  console.log('\nReceived SIGINT (Ctrl+C). Stopping agent...');
   await stopAgent();
-  closeLogger(); // Close the logger
-  // Don't exit immediately - let the agent handle cleanup
+  logger.close();
+  process.exit(0);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  logger.error('Unhandled rejection', { reason });
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  logger.error('Uncaught exception', { error });
+  process.exit(1);
 });
 
 // Create a readline interface for handling keypress events
@@ -28,7 +38,7 @@ process.stdin.on('keypress', async (str, key) => {
   if (key.name === 'q') {
     console.log('\nStop key pressed. Requesting agent to stop gracefully...');
     await stopAgent();
-    closeLogger(); // Close the logger
+    logger.close();
   }
 });
 
@@ -44,18 +54,15 @@ if (process.stdin.isTTY) {
     await runGraph();
   } catch (error) {
     console.error("Fatal error:", error);
-    closeLogger(); // Close the logger on error
+    logger.error('Fatal error in main execution', { error });
     process.exit(1);
   } finally {
-    closeLogger(); // Make sure logger is closed
-    // Clean up the readline interface
+    logger.close();
     rl.close();
   }
 })();
 
 export async function getPageState(page: Page): Promise<object> {
-  const timestamp = Date.now();
-
   return {
     url: page.url(),
     title: await page.title(),

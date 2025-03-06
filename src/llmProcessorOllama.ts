@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import { LLMProcessor } from "./llmProcessor.js";
 import { GraphContext } from "./browserExecutor.js";
 import { ActionExtractor } from "./actionExtractor.js";
+import logger from './utils/logger.js';
 
 dotenv.config();
 
@@ -14,107 +15,199 @@ const ollama = new ChatOllama({
   model: "phi4-mini"
 });
 
-export const ollamaProcessor: LLMProcessor = {
+class OllamaProcessor implements LLMProcessor {
+  private lastContext: number[] | null = null;
+  private tokenCount: number = 0;
+  private readonly MAX_TOKENS = 3500; // Buffer below 4096 to be safe
+  
+  // Helper function to build feedback section
+  private buildFeedbackSection(context: GraphContext): string {
+    if (context.actionFeedback) {
+      return `FEEDBACK: ${context.actionFeedback}`;
+    } else if (context.retries && context.retries > 0) {
+      return `ISSUE: Previous ${context.retries} attempts with selector "${context.lastSelector}" failed. Try a different approach.`;
+    } else if (context.lastActionSuccess) {
+      return `SUCCESS: Last action worked! Continue to next step.`;
+    }
+    return '';
+  }
+
+  // Helper function to truncate text
+  private truncate(text: string | undefined, maxLength: number): string {
+    if (!text || text.length <= maxLength) return text || '';
+    return text.substring(0, maxLength) + '...[content truncated]';
+  }
+  
+  private logPromptContext(context: Record<string, any>) {
+    logger.debug("OLLAMA CONTEXT", context);
+  }
+  
+  async processPrompt(prompt: string): Promise<string> {
+    logger.llm.request('Ollama', {
+      modelInfo: {
+        model: process.env.OLLAMA_MODEL || "phi4-mini",
+        contextSize: this.lastContext?.length || 0,
+        tokenCount: this.tokenCount
+      },
+      promptAnalysis: {
+        goal: prompt.match(/TASK: (.*?)\n/)?.[1],
+        url: prompt.match(/URL: (.*?)\n/)?.[1],
+        title: prompt.match(/TITLE: (.*?)\n/)?.[1],
+        feedback: prompt.match(/FEEDBACK: (.*?)\n/)?.[1],
+        history: prompt.match(/TASK HISTORY:\n([\s\S]*?)$/)?.[1]?.split('\n')
+      }
+    });
+
+    // Estimate token count (rough approximation)
+    const estimatedPromptTokens = Math.ceil(prompt.length / 4);
+    this.tokenCount += estimatedPromptTokens;
+    
+    // Check if we need to reset context
+    if (this.tokenCount > this.MAX_TOKENS) {
+      logger.info("Token limit reached, resetting context", {
+        currentTokens: this.tokenCount,
+        limit: this.MAX_TOKENS
+      });
+      this.lastContext = null;
+      this.tokenCount = estimatedPromptTokens;
+    }
+    
+    const options: any = {
+      model: process.env.OLLAMA_MODEL || "phi4-mini",
+      prompt: prompt,
+      stream: false,
+      options: {
+        num_ctx: 4096,
+        temperature: 0.7
+      }
+    };
+    
+    // Include context from previous interaction if available
+    if (this.lastContext) {
+      options.context = this.lastContext;
+    }
+
+    try {
+      const result = await fetch(`${OLLAMA_HOST}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(options)
+      });
+      
+      const response = await result.json();
+      
+      // Store context for next interaction
+      if (response.context) {
+        this.lastContext = response.context;
+        logger.debug('Updated Ollama context', {
+          contextLength: response.context.length
+        });
+      }
+
+      logger.llm.response('Ollama', {
+        responseLength: response.response?.length,
+        content: response.response,
+        metrics: {
+          totalDuration: response.total_duration,
+          evalDuration: response.eval_duration,
+          evalCount: response.eval_count
+        }
+      });
+      
+      return response.response || '';
+    } catch (error) {
+      logger.llm.error('Ollama', {
+        error,
+        endpoint: `${OLLAMA_HOST}/api/generate`,
+        lastContextSize: this.lastContext?.length
+      });
+      return "Error communicating with Ollama API";
+    }
+  }
+  
   async generateNextAction(state: object, context: GraphContext): Promise<GraphContext["action"] | null> {
-    const prompt = `
-You are a web automation assistant. 
-${context.userGoal ? `Your goal is to: ${context.userGoal}` : ''}
+    try {
+      logger.info('Generating next action', {
+        state: {
+          url: (state as any).url,
+          title: (state as any).title,
+          contentLength: context.pageContent?.length
+        },
+        context: {
+          goal: context.userGoal,
+          lastAction: context.action,
+          retryCount: context.retries,
+          successCount: context.successCount,
+          recentHistory: context.history?.slice(-3)
+        }
+      });
 
-${context.pageSummary ? `Page Summary: ${context.pageSummary}` : ''}
+      const prompt = `
+You are a web automation assistant helping complete tasks by controlling a browser.
 
-${context.actionFeedback ? `${context.actionFeedback}\n` : ''}
+${context.userGoal ? `TASK: ${context.userGoal}` : 'Analyze the page and suggest the next action.'}
 
-${context.lastActionSuccess 
-  ? `🌟 The last action was SUCCESSFUL! Keep up the good work!` 
-  : context.retries 
-    ? `Previous ${context.retries} attempts with selector "${context.lastSelector}" weren't successful. Let's try a different approach.` 
-    : ''
-}
+${this.buildFeedbackSection(context)}
 
-${context.interactiveElements && context.interactiveElements.length > 0 
-  ? `Interactive elements detected on page:
-${context.interactiveElements.map(el => `- ${el}`).join('\n')}` 
+CURRENT PAGE:
+URL: ${(state as any).url}
+TITLE: ${(state as any).title}
+
+${context.pageContent ? `PAGE CONTENT:\n${this.truncate(context.pageContent, 6000)}` : ''}
+
+${context.successfulActions && context.successfulActions.length > 0
+  ? `SUCCESSFUL ACTIONS ON THIS SITE:\n${context.successfulActions.slice(-3).join('\n')}`
   : ''}
 
-Current page state:
-URL: ${(state as any).url}
-Title: ${(state as any).title}
+AVAILABLE ACTIONS:
+- Click: { "type": "click", "element": "selector", "description": "description" }
+- Input: { "type": "input", "element": "selector", "value": "text" }
+- Navigate: { "type": "navigate", "value": "url" }
+- Wait: { "type": "wait", "maxWait": milliseconds }
+- AskHuman: { "type": "askHuman", "question": "This is your direct line to the human end of this system. Want human to pass a bot check for you? Confused? Saying hi? Succeeded & reporting back? This is the thing to use." }
 
-${context.successfulActions && context.successfulActions.length > 0 
-  ? `💡 Actions that have worked well on this site:\n${context.successfulActions.slice(-3).join('\n')}`
-  : ''
-}
+TASK HISTORY:
+${context.compressedHistory ? context.compressedHistory.slice(-5).join('\n') : 
+  context.history ? context.history.slice(-5).join('\n') : 'No previous actions.'}
 
-${context.recognizedMilestones && context.recognizedMilestones.length > 0
-  ? `🏆 Milestones achieved: ${context.recognizedMilestones.join(', ')}`
-  : ''
-}
-
-Available actions:
-Click: { "type": "click", "element": "input[type=text]", "description": "text input field" }
-Input: { "type": "input", "element": "input[type=text]", "value": "search text" }
-Navigate: { "type": "navigate", "value": "https://example.org" }
-Scroll: { "type": "scroll" }
-Extract: { "type": "extract", "element": "div.content" }
-Wait: { "type": "wait", "maxWait": 5000 }
-AskHuman: { "type": "askHuman", "question": "How should I proceed with this form?" }
-
-IMPORTANT: Format your response as a JSON object with a "type" field.
-Always use "type" to specify what action to perform.
-Example: {"type": "input", "element": "input[type=text]", "value": "search query"}
-
-When selecting elements, use common CSS selectors (not XPath) and be as general as possible.
-Prefer tag selectors with attributes like: input[type=text], button[type=submit], a[href*="example"]
-Avoid specific classes or IDs that may be dynamic or change across sites.
-
-Use the askHuman action when you're stuck or unsure about how to proceed.
-
-Current task context:
-${context.compressedHistory ? context.compressedHistory.join('\n') : context.history.join('\n')}
-
-Next action:
-    `;
-    try {
-      console.log("-------------------");
-      console.log("\n MAIN SLM PROMPT:\n" + prompt + "\n");
-      console.log("-------------------");
-      const response = await ollama.invoke(prompt);
+Respond with a single JSON object for our next action.
+`;
       
-      // Extract text from the response content
-      let responseContent = '';
-      
-      // If content is a string, use it directly
-      if (typeof response.content === 'string') {
-        responseContent = response.content;
-      } 
-      // If content is an array (MessageContentComplex[]), extract text parts
-      else if (Array.isArray(response.content)) {
-        for (const part of response.content) {
-          if (part.type === 'text') {
-            responseContent += part.text;
-          }
-        }
-      }
+      logger.debug('Built Ollama prompt', {
+        promptLength: prompt.length,
+        hasPageContent: !!context.pageContent,
+        hasSuccessfulActions: context.successfulActions?.length ?? 0 > 0,
+        feedback: this.buildFeedbackSection(context)
+      });
 
-      console.log("-------------------");
-      console.log("\n MAIN SLM RESPONSE:\n" + responseContent + "\n");
-      console.log("-------------------");
-      if (!responseContent) {
-        console.error("Failed to extract text content from LLM response");
-        return null;
-      }
+      const responseText = await this.processPrompt(prompt);
+
+      const action = await ActionExtractor.extract(responseText);
       
-      // Use the ActionExtractor to handle all normalization and extraction
-      const action = ActionExtractor.extract(responseContent);
-      
-      if (!action) {
-        console.error("Failed to extract valid action from Ollama response");
-      }
+      logger.info('Action extraction completed', {
+        success: !!action,
+        action: action,
+        responseLength: responseText.length
+      });
       
       return action;
     } catch (error) {
-      console.error("LLM Error:", error);
+      logger.error('Failed to generate next action', {
+        error,
+        state: {
+          url: (state as any).url,
+          title: (state as any).title
+        },
+        context: {
+          userGoal: context.userGoal,
+          lastAction: context.action,
+          retries: context.retries
+        }
+      });
       return null;
     }
   }
-};
+}
+
+// Export the ollamaProcessor using the same interface as the Gemini processor
+export const ollamaProcessor: LLMProcessor = new OllamaProcessor();

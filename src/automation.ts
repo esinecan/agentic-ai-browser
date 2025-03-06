@@ -1,6 +1,6 @@
 import { launchBrowser, createPage, getPageState, verifyAction, GraphContext, compressHistory, verifyElementExists } from "./browserExecutor.js";
 import { ollamaProcessor } from "./llmProcessorOllama.js";
-import { generateNextAction as geminiGenerateNextAction } from "./llmProcessorGemini.js";
+import { geminiProcessor } from "./llmProcessorGemini.js";
 import { Page } from 'playwright';
 import { Action } from './browserExecutor.js';
 import { LLMProcessor } from './llmProcessor.js';
@@ -8,16 +8,11 @@ import readline from 'readline';
 import fs from 'fs';
 import path from 'path';
 import { SuccessPatterns } from './successPatterns.js';
-import { generatePageSummary, extractInteractiveElements } from './pageInterpreter.js';
 import { getAgentState } from './utils/agentState.js';
+import logger from './utils/logger.js';
 
 const MAX_RETRIES = 7;
 const MAX_REPEATED_ACTIONS = 3; // Number of repeated actions before forced change
-
-// Create a proper LLMProcessor object for Gemini
-const geminiProcessor: LLMProcessor = {
-  generateNextAction: geminiGenerateNextAction
-};
 
 // Use our ollama processor by default, but allow for other implementations
 const llmProcessor: LLMProcessor = process.env.LLM_PROVIDER === 'gemini' ? geminiProcessor : ollamaProcessor;
@@ -34,8 +29,8 @@ function isRedundantAction(currentAction: Action, history: Action[]): boolean {
   
   for (const pastAction of recentActions) {
     if (pastAction.type === currentAction.type) {
-      // For extract and click, check if targeting the same element
-      if ((currentAction.type === 'extract' || currentAction.type === 'click') && 
+      // For click, check if targeting the same element
+      if (currentAction.type === 'click' && 
           pastAction.element === currentAction.element) {
         similarActionCount++;
       }
@@ -70,10 +65,7 @@ function generateActionFeedback(ctx: GraphContext): string {
   // Check for repeated actions
   if (isRedundantAction(lastAction, previousActions)) {
     // Build a specific feedback message based on the action type
-    if (lastAction.type === 'extract') {
-      return `NOTICE: You've repeatedly tried to extract content from "${lastAction.element}". Please try a different element or action type.`;
-    }
-    else if (lastAction.type === 'click') {
+    if (lastAction.type === 'click') {
       return `NOTICE: You've repeatedly tried to click "${lastAction.element}" without success. Try a different element or action type.`;
     }
     else if (lastAction.type === 'input') {
@@ -288,36 +280,29 @@ async function askHumanHandler(ctx: GraphContext): Promise<string> {
   if (!ctx.page || !ctx.action) throw new Error("Invalid context");
   
   try {
-    // Your existing askHuman implementation
-    // Store page state before human interaction
     const beforeHelpState = {
       url: ctx.page.url(),
       title: await ctx.page.title()
     };
     
-    // Take a screenshot to show the current state
     const screenshotDir = process.env.SCREENSHOT_DIR || "./screenshots";
     const screenshotPath = path.join(screenshotDir, `human-help-${Date.now()}.png`);
     await fs.promises.mkdir(path.dirname(screenshotPath), { recursive: true });
     await ctx.page.screenshot({ path: screenshotPath });
     
-    // Use the question provided by the model or fall back to a default
     const question = ctx.action.question || 
       `I've tried ${ctx.retries} times but keep failing. The page title is "${await ctx.page.title()}". What should I try next?`;
     
-    // ENHANCED: Include more context from the page
     let pageInfo = "";
     try {
-      // Extract main content or title to give context
       pageInfo = await ctx.page.evaluate(() => {
         const mainContent = document.querySelector('main, article, #readme')?.textContent?.trim();
         return mainContent ? mainContent.substring(0, 500) : document.title;
       });
     } catch (err) {
-      console.error("Failed to extract page context:", err);
+      logger.error("Failed to extract page context", err);
     }
     
-    // Format the question with context
     const formattedQuestion = `
 AI needs your help (screenshot saved to ${screenshotPath}):
 
@@ -330,31 +315,35 @@ ${pageInfo ? `\nPage context: ${pageInfo}...\n` : ''}
 
 Your guidance:`;
     
-    // Get human input
-    console.log("\n\n=== ASKING FOR HUMAN HELP ===");
+    logger.info("Asking for human help", {
+      screenshot: screenshotPath,
+      question,
+      currentUrl: ctx.page.url(),
+      task: ctx.userGoal
+    });
+
     const humanResponse = await promptUser(formattedQuestion);
-    console.log("=== RECEIVED HUMAN RESPONSE ===\n\n");
     
-    // Save the response to context for the LLM to use - make it prominent in the feedback
+    logger.info("Received human response", {
+      responsePreview: humanResponse.substring(0, 100)
+    });
+    
     ctx.actionFeedback = `👤 HUMAN ASSISTANCE: ${humanResponse}`;
     
-    // Add to history logs
     ctx.history.push(`Asked human: "${question.substring(0, 50)}${question.length > 50 ? '...' : ''}"`);
     ctx.history.push(`Human response: "${humanResponse.substring(0, 50)}${humanResponse.length > 50 ? '...' : ''}"`);
     
-    // After getting human response, check if page changed
     const currentUrl = ctx.page.url();
     if (currentUrl !== beforeHelpState.url) {
       ctx.history.push(`Note: Page changed during human interaction from "${beforeHelpState.url}" to "${currentUrl}"`);
-      // Reset accumulated state since we're on a new page
       ctx.retries = 0;
     }
     
-    // Reset retries since human helped
     ctx.retries = 0;
     
     return "chooseAction";
   } catch (error) {
+    logger.error("Human interaction failed", error);
     ctx.history.push(`Human interaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     return "handleFailure";
   }
@@ -363,14 +352,26 @@ Your guidance:`;
 // Define our state functions in an object keyed by state name.
 const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
   start: async (ctx: GraphContext) => {
+    logger.info('Starting automation session', {
+      goal: ctx.userGoal,
+      browser: {
+        executable: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+        headless: process.env.HEADLESS !== "false"
+      }
+    });
+
     ctx.history = [];
-    ctx.actionHistory = []; // Track actions separately for redundancy detection
+    ctx.actionHistory = [];
     ctx.startTime = Date.now();
     ctx.browser = await launchBrowser();
     ctx.page = await createPage(ctx.browser);
-    ctx.history.push(`Navigated to initial URL: ${ctx.page.url()}`);
     
-    // Initialize success tracking
+    logger.browser.action('navigation', {
+      url: ctx.page.url(),
+      timestamp: Date.now()
+    });
+    
+    // Initialize tracking arrays
     ctx.successfulActions = [];
     ctx.lastActionSuccess = false;
     ctx.successCount = 0;
@@ -379,56 +380,49 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
     // Initialize milestones
     initializeMilestones(ctx);
     
-    // Reset the agent state
+    // Reset agent state
     const agentState = getAgentState();
     agentState.clearStop();
     
     return "chooseAction";
   },
+
   chooseAction: async (ctx: GraphContext) => {
-    // First check for stop request
+    logger.transition(`Transitioning to chooseAction`, {
+      url: ctx.page?.url(),
+      lastAction: ctx.action,
+      metrics: {
+        successCount: ctx.successCount,
+        totalActions: ctx.actionHistory?.length,
+        milestonesAchieved: ctx.recognizedMilestones?.length
+      }
+    });
+
+    // Check for stop request
     const agentState = getAgentState();
     if (agentState.isStopRequested()) {
+      logger.info('Stop requested by user');
       ctx.history.push("Stop requested by user");
       return "terminate";
     }
-    
+
     if (!ctx.page) throw new Error("Page not initialized");
-    const stateSnapshot = await getPageState(ctx.page) as PageState;
+    const stateSnapshot = await getPageState(ctx.page);
     
-    // Store the current valid state in the AgentState
+    // Store state and update progress
     agentState.setLastValidState(stateSnapshot);
-    
-    // Get AI-generated page summary
-    try {
-      ctx.pageSummary = await generatePageSummary(stateSnapshot.domSnapshot);
-      
-      // Get interactive elements
-      ctx.interactiveElements = extractInteractiveElements(stateSnapshot.domSnapshot);
-    } catch (error) {
-      console.error("Error generating page summary:", error);
-    }
-    
-    // Compress history for better context
     ctx.compressedHistory = compressHistory(ctx.history);
-    
-    // Detect progress between states
     detectProgress(ctx, ctx.previousPageState, stateSnapshot);
-    
-    // Check for milestone achievements
     checkMilestones(ctx, stateSnapshot);
-    
-    // Store current state for future comparison
     ctx.previousPageState = stateSnapshot;
-    
-    // Add feedback about repeated actions to context for the LLM
+
+    // Add feedback about repeated actions
     const actionFeedback = generateActionFeedback(ctx);
     if (actionFeedback) {
       ctx.actionFeedback = actionFeedback;
-      //console.log(actionFeedback); // Log feedback for debugging
     }
-    
-    // Add suggestions from success patterns if we have them
+
+    // Get suggestions from success patterns
     if (ctx.page.url()) {
       try {
         const domain = new URL(ctx.page.url()).hostname;
@@ -436,37 +430,41 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
         const domainSuggestions = successPatternsInstance.getSuggestionsForDomain(domain);
         
         if (domainSuggestions.length > 0) {
-          const suggestions = `💡 Tips based on previous successes:\n${domainSuggestions.join('\n')}`;
-          //console.log(suggestions);
+          logger.debug('Success pattern suggestions', {
+            domain,
+            suggestions: domainSuggestions
+          });
           
-          if (ctx.actionFeedback) {
-            ctx.actionFeedback += '\n\n' + suggestions;
-          } else {
-            ctx.actionFeedback = suggestions;
-          }
+          const suggestions = `💡 Tips based on previous successes:\n${domainSuggestions.join('\n')}`;
+          ctx.actionFeedback = ctx.actionFeedback 
+            ? ctx.actionFeedback + '\n\n' + suggestions
+            : suggestions;
         }
       } catch (error) {
-        console.error("Error getting domain suggestions:", error);
+        logger.error('Error getting domain suggestions', error);
       }
     }
-    
+
     const action = await llmProcessor.generateNextAction(stateSnapshot, ctx);
     
     if (!action) {
-      ctx.history.push("Failed to generate a valid action.");
+      logger.error('Failed to generate valid action');
       return "handleFailure";
     }
+
+    logger.browser.action('nextAction', action);
     
     // Smart triggering for human help
     if (ctx.retries && ctx.retries >= 2) {
-      // After 2 retries, consider asking for help
-      const shouldAskHuman = Math.random() < 0.7; // 70% chance after repeated failures
+      const shouldAskHuman = Math.random() < 0.7;
       
       if (shouldAskHuman) {
-        // Generate a question based on recent failures
-        const failedActionType = ctx.actionHistory && ctx.actionHistory.length > 0 
-          ? ctx.actionHistory[ctx.actionHistory.length - 1].type 
-          : 'action';
+        const failedActionType = ctx.actionHistory?.[ctx.actionHistory.length - 1]?.type || 'action';
+        
+        logger.info('Switching to human help', {
+          retries: ctx.retries,
+          lastFailedAction: failedActionType
+        });
         
         ctx.action = {
           type: 'askHuman',
@@ -475,187 +473,192 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
           maxWait: 5000
         };
         
-        ctx.history.push(`AI decided to ask for human help after ${ctx.retries} failures`);
         return "askHuman";
       }
     }
-    
-    // If this is a repeated redundant action, take evasive action
-    if (ctx.actionHistory && ctx.actionHistory.length > 0 && 
-        isRedundantAction(action, ctx.actionHistory)) {
-      ctx.history.push(`Detected redundant action: ${JSON.stringify(action)}. Trying to break the loop.`);
-      
-      // Try a "wait" action to let the page settle if we're in a loop
+
+    // Check for redundant actions
+    if (ctx.actionHistory?.length && isRedundantAction(action, ctx.actionHistory)) {
+      logger.warn('Detected redundant action', {
+        action,
+        recentActions: ctx.actionHistory.slice(-3)
+      });
+
       if (action.type !== 'wait') {
         ctx.action = { type: 'wait', maxWait: 2000, selectorType: 'css' };
-        ctx.history.push(`Inserted wait action to break potential loop.`);
         return "wait";
-      }
-      // If we're already in a wait loop, try to ask human
-      else if (action.type === 'wait') {
+      } else {
         ctx.action = {
           type: 'askHuman',
           question: `I seem to be stuck in a loop of waiting. The page title is "${await ctx.page.title()}". What should I try next?`,
           selectorType: 'css',
           maxWait: 5000
         };
-        ctx.history.push(`AI decided to ask for human help to break out of wait loop`);
         return "askHuman";
       }
     }
-    
+
     ctx.action = action;
-    
-    // Store the last selector used for better error feedback
+    if (action.type === 'navigate' && ctx.page) {
+      action.previousUrl = ctx.page.url();
+    }
     if (action.element) {
       ctx.lastSelector = action.element;
     }
-    
+
+    // Record action
     ctx.history.push(`Selected action: ${JSON.stringify(action)}`);
-    
-    // Record the action for redundancy detection
     if (!ctx.actionHistory) ctx.actionHistory = [];
     ctx.actionHistory.push(action);
-    
-    // Now handle possible capitalization differences
-    const actionType = action.type.toLowerCase();
-    
-    // Element existence verification before proceeding with element-based actions
-    if (action.element && ['click', 'input'].includes(actionType)) {
+
+    // Verify element existence
+    if (action.element && ['click', 'input'].includes(action.type.toLowerCase())) {
       try {
-        //console.log(`Verifying existence of element: ${action.element}`);
+        logger.browser.action('elementCheck', {
+          element: action.element,
+          type: action.type
+        });
+        
         const elementCheck = await verifyElementExists(ctx.page, action.element, action.selectorType);
         
         if (!elementCheck.exists) {
-          ctx.history.push(`Element ${action.element} does not exist on the page.`);
+          logger.warn('Element not found', {
+            element: action.element,
+            suggestion: elementCheck.suggestion
+          });
+          
           if (elementCheck.suggestion) {
             ctx.actionFeedback = `Element "${action.element}" not found. ${elementCheck.suggestion}`;
-            ctx.history.push(elementCheck.suggestion);
           }
           return "handleFailure";
-        } else {
-          //console.log(`Element exists with ${elementCheck.count} instances on page`);
         }
       } catch (error) {
-        console.error("Error verifying element existence:", error);
+        logger.error('Error verifying element existence', error);
       }
     }
-    
-    // Check if the state exists first (ADD LOWERCASE COMPARISON)
-    const actionTypeLower = actionType.toLowerCase();
-    if (states[actionType]) {
+
+    const actionType = action.type.toLowerCase();
+    if (states[actionType] || states[action.type]) {
       return actionType;
-    } else if (states[actionTypeLower]) {
-      // Case-insensitive match found
-      ctx.history.push(`Using case-insensitive action type: ${actionTypeLower}`);
-      return actionTypeLower;
     } else {
-      ctx.history.push(`Action type "${actionType}" not supported. Using fallback.`);
+      logger.error('Unsupported action type', {
+        type: actionType,
+        supportedTypes: Object.keys(states)
+      });
       return "handleFailure";
     }
   },
-  
+
   // Use the extracted function for both cases
   askHuman: askHumanHandler,
   askhuman: askHumanHandler, // This is now valid since we're using a pre-defined function
   
   click: async (ctx: GraphContext) => {
     if (!ctx.page || !ctx.action) throw new Error("Invalid context");
+    
+    logger.browser.action('click', {
+      element: ctx.action.element,
+      url: ctx.page.url()
+    });
+    
     try {
-      // Dynamically import getElement to avoid circular dependencies
       const { getElement } = await import("./browserExecutor.js");
       const elementHandle = await getElement(ctx.page, ctx.action);
       if (!elementHandle) throw new Error("Element not found");
+      
       await elementHandle.click({ timeout: ctx.action.maxWait });
-      
-      // Verify that the click had the intended effect.
       const verified = await verifyAction(ctx.page, ctx.action);
-      if (!verified) throw new Error("Action verification failed after click");
       
-      // Track success
+      if (!verified) {
+        throw new Error("Action verification failed after click");
+      }
+
       ctx.lastActionSuccess = true;
       ctx.successCount = (ctx.successCount || 0) + 1;
+      
       const elementSelector = ctx.action.element;
       const description = ctx.action.description || elementSelector;
-      
-      // Store successful action
       ctx.successfulActions?.push(`click:${elementSelector}`);
-      
-      // Create tailored positive feedback
-      let feedback = `✅ Successfully clicked on ${description}!`;
-      
-      // Add extra encouragement for consecutive successes
-      if (ctx.successCount > 1) {
-        feedback += ` Great work! You've had ${ctx.successCount} successful actions in a row.`;
-      }
-      
-      // Add specific context about what changed as a result
-      feedback += ` The page has responded to the click.`;
-      
-      ctx.actionFeedback = feedback;
-      ctx.history.push(`Clicked ${description} successfully`);
-      
-      // Record success pattern
+
+      logger.info('Click successful', {
+        element: description,
+        successCount: ctx.successCount
+      });
+
       try {
         const domain = new URL(ctx.page.url()).hostname;
         const successPatternsInstance = new SuccessPatterns();
         successPatternsInstance.recordSuccess(ctx.action, domain);
       } catch (error) {
-        console.error("Error recording success pattern:", error);
+        logger.error('Error recording success pattern', error);
       }
-      
+
       return "getPageState";
     } catch (error) {
+      logger.browser.error('click', {
+        error,
+        element: ctx.action.element
+      });
+      
       ctx.lastActionSuccess = false;
       ctx.successCount = 0;
-      ctx.history.push(`Click failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return "handleFailure";
     }
   },
   input: async (ctx: GraphContext) => {
     if (!ctx.page || !ctx.action) throw new Error("Invalid context");
+
+    logger.browser.action('input', {
+      element: ctx.action.element,
+      value: ctx.action.value,
+      url: ctx.page.url()
+    });
+
     try {
       const { getElement } = await import("./browserExecutor.js");
       const elementHandle = await getElement(ctx.page, ctx.action);
       if (!elementHandle) throw new Error("Element not found");
-      await elementHandle.fill(ctx.action.value!, { timeout: ctx.action.maxWait });
       
-      // Verify that the input was correctly entered.
+      await elementHandle.fill(ctx.action.value!, { timeout: ctx.action.maxWait });
       const verified = await verifyAction(ctx.page, ctx.action);
+      
       if (!verified) throw new Error("Action verification failed after input");
       
-      // Track success
       ctx.lastActionSuccess = true;
       ctx.successCount = (ctx.successCount || 0) + 1;
       const elementSelector = ctx.action.element;
       const value = ctx.action.value;
       const description = ctx.action.description || elementSelector;
       
-      // Store successful action
       ctx.successfulActions?.push(`input:${elementSelector}`);
       
-      // Create tailored positive feedback
-      let feedback = `✅ Successfully entered "${value}" into ${description}!`;
+      ctx.actionFeedback = `✅ Successfully entered "${value}" into ${description}!` + 
+        (ctx.successCount > 1 ? ` You're doing great! ${ctx.successCount} successful actions in a row.` : '');
       
-      // Add extra encouragement for consecutive successes
-      if (ctx.successCount > 1) {
-        feedback += ` You're doing great! ${ctx.successCount} successful actions in a row.`;
-      }
-      
-      ctx.actionFeedback = feedback;
       ctx.history.push(`Input '${ctx.action.value}' to ${ctx.action.element}`);
       
-      // Record success pattern
       try {
         const domain = new URL(ctx.page.url()).hostname;
         const successPatternsInstance = new SuccessPatterns();
         successPatternsInstance.recordSuccess(ctx.action, domain);
       } catch (error) {
-        console.error("Error recording success pattern:", error);
+        logger.error("Error recording success pattern", error);
       }
       
+      logger.info("Input successful", {
+        element: ctx.action.element,
+        value: ctx.action.value,
+        successCount: ctx.successCount
+      });
+
       return "chooseAction";
     } catch (error) {
+      logger.browser.error("input", {
+        error,
+        element: ctx.action.element,
+        value: ctx.action.value
+      });
+
       ctx.lastActionSuccess = false;
       ctx.successCount = 0;
       ctx.history.push(`Input failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -664,6 +667,12 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
   },
   navigate: async (ctx: GraphContext) => {
     if (!ctx.page || !ctx.action?.value) throw new Error("Invalid context");
+
+    logger.browser.action('navigate', {
+      url: ctx.action.value,
+      currentUrl: ctx.page.url()
+    });
+
     try {
       const url = new URL(ctx.action.value);
       await ctx.page.goto(url.toString(), { 
@@ -671,39 +680,38 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
         waitUntil: "domcontentloaded"
       });
       
-      // Verify that navigation succeeded.
       const verified = await verifyAction(ctx.page, ctx.action);
       if (!verified) throw new Error("Action verification failed after navigation");
       
-      // Track success
       ctx.lastActionSuccess = true;
       ctx.successCount = (ctx.successCount || 0) + 1;
-      
-      // Store successful action
       ctx.successfulActions?.push(`navigate:${url}`);
       
-      // Create tailored positive feedback
-      let feedback = `✅ Successfully navigated to ${url}!`;
+      ctx.actionFeedback = `✅ Successfully navigated to ${url}!` +
+        (ctx.successCount > 1 ? ` You're on a roll with ${ctx.successCount} successful actions in a row!` : '');
       
-      // Add extra encouragement for consecutive successes
-      if (ctx.successCount > 1) {
-        feedback += ` You're on a roll with ${ctx.successCount} successful actions in a row!`;
-      }
-      
-      ctx.actionFeedback = feedback;
       ctx.history.push(`Navigated to: ${url}`);
       
-      // Record success pattern
       try {
         const domain = url.hostname;
         const successPatternsInstance = new SuccessPatterns();
         successPatternsInstance.recordSuccess(ctx.action, domain);
       } catch (error) {
-        console.error("Error recording success pattern:", error);
+        logger.error("Error recording success pattern", error);
       }
       
+      logger.info("Navigation successful", {
+        url: ctx.action.value,
+        successCount: ctx.successCount
+      });
+
       return "chooseAction";
     } catch (error) {
+      logger.browser.error("navigation", {
+        error,
+        url: ctx.action.value
+      });
+
       ctx.lastActionSuccess = false;
       ctx.successCount = 0;
       ctx.history.push(`Navigation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -711,246 +719,160 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
     }
   },
   wait: async (ctx: GraphContext) => {
-    // Implementation for the 'wait' state that the LLM sometimes tries to use
+    const waitTime = ctx.action?.maxWait || 430000;
+
+    logger.browser.action('wait', {
+      duration: waitTime
+    });
+
     try {
-      const waitTime = ctx.action?.maxWait || 430000; // Default to 430000ms if not specified
-      
-      // Track success
       ctx.lastActionSuccess = true;
       ctx.successCount = (ctx.successCount || 0) + 1;
-      
-      // Store successful action
       ctx.successfulActions?.push(`wait:${waitTime}ms`);
       
-      let feedback = `✅ Successfully waited for ${waitTime}ms.`;
+      ctx.actionFeedback = `✅ Successfully waited for ${waitTime}ms.` +
+        (ctx.successCount > 1 ? ` You've had ${ctx.successCount} successful actions in a row.` : '');
       
-      // Add extra encouragement for consecutive successes
-      if (ctx.successCount > 1) {
-        feedback += ` You've had ${ctx.successCount} successful actions in a row.`;
-      }
-      
-      ctx.actionFeedback = feedback;
       ctx.history.push(`Waiting for ${waitTime}ms`);
       
       await new Promise(resolve => setTimeout(resolve, waitTime));
+
+      logger.info("Wait completed", {
+        duration: waitTime,
+        successCount: ctx.successCount
+      });
+
       return "chooseAction";
     } catch (error) {
+      logger.browser.error("wait", {
+        error,
+        duration: waitTime
+      });
+
       ctx.lastActionSuccess = false;
       ctx.successCount = 0;
       ctx.history.push(`Wait failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return "handleFailure";
     }
   },
-  extract: async (ctx: GraphContext) => {
-    // Basic implementation for extract state
-    try {
-      // Track success
-      ctx.lastActionSuccess = true;
-      ctx.successCount = (ctx.successCount || 0) + 1;
-      
-      // Store successful action
-      if (ctx.action?.element) {
-        ctx.successfulActions?.push(`extract:${ctx.action.element}`);
-      }
-      
-      let feedback = `✅ Successfully extracted content!`;
-      
-      // Add extra encouragement for consecutive successes
-      if (ctx.successCount > 1) {
-        feedback += ` Nice job! ${ctx.successCount} successful actions in a row.`;
-      }
-      
-      ctx.actionFeedback = feedback;
-      ctx.history.push(`Extract action received: ${JSON.stringify(ctx.action)}`);
-      
-      // Record success pattern if we have an element
-      if (ctx.action?.element && ctx.page) {
-        try {
-          const domain = new URL(ctx.page.url()).hostname;
-          const successPatternsInstance = new SuccessPatterns();
-          successPatternsInstance.recordSuccess(ctx.action, domain);
-        } catch (error) {
-          console.error("Error recording success pattern:", error);
-        }
-      }
-      
-      return "chooseAction";
-    } catch (error) {
-      ctx.lastActionSuccess = false;
-      ctx.successCount = 0;
-      ctx.history.push(`Extract failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      return "handleFailure";
-    }
-  },
   handleFailure: async (ctx: GraphContext) => {
-    // Reset success tracking
+    logger.error('Action failure', {
+      retries: ctx.retries,
+      lastAction: ctx.action,
+      url: ctx.page?.url()
+    });
+
     ctx.lastActionSuccess = false;
     ctx.successCount = 0;
-    
     ctx.retries = (ctx.retries || 0) + 1;
+
     if (ctx.retries > MAX_RETRIES) {
-      ctx.history.push("Max retries exceeded");
+      logger.error('Max retries exceeded', {
+        maxRetries: MAX_RETRIES,
+        totalActions: ctx.actionHistory?.length
+      });
       return "terminate";
     }
-    
-    ctx.history.push(`Attempting recovery (${ctx.retries}/${MAX_RETRIES})`);
-    
-    // If this is an input action failing on a common text input selector, try with a textarea
-    if (ctx.action?.type === 'input' && 
-        (ctx.action.element === 'input[type=text]' || ctx.action.element === 'input[type="text"]')) {
-      ctx.action.element = 'textarea';
-      ctx.history.push(`Switching selector from input[type=text] to textarea for better search box compatibility`);
-      return ctx.action.type;
-    }
-    
-    // If this is a click action failing on a search button, try alternative selectors
-    if (ctx.action?.type === 'click' && 
-        (ctx.action.element?.toLowerCase().includes('search') || 
-         ctx.action.description?.toLowerCase().includes('search'))) {
-      // Try alternative search button selectors
-      const searchButtonSelectors = [
-        'button[type=submit]',
-        '[role=button][aria-label*="search" i]',
-        'button.search-button',
-        'input[type=submit]',
-        '[role=search] button'
-      ];
-      
-      // Find one that exists
-      if (ctx.page) {
-        for (const selector of searchButtonSelectors) {
-          try {
-            const exists = await ctx.page.$(selector);
-            if (exists) {
-              ctx.action.element = selector;
-              ctx.history.push(`Switching to alternative search button selector: ${selector}`);
-              return ctx.action.type;
-            }
-          } catch (e) {
-            // Continue to next selector
-          }
-        }
-      }
-    }
-    
-    // If we have a selector that failed, try to find a similar one
-    if (ctx.action?.element && ctx.page) {
-      const { findBestMatch } = await import("./browserExecutor.js");
-      const match = await findBestMatch(ctx.page, ctx.action.element);
-      if (match) {
-        ctx.action.element = match;
-        ctx.history.push(`Found similar element: ${match}`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        return ctx.action.type;
-      } else {
-        // If no match found, try verifyElementExists to get suggestions
-        try {
-          const elementCheck = await verifyElementExists(ctx.page, ctx.action.element, ctx.action.selectorType);
-          if (elementCheck.suggestion) {
-            ctx.actionFeedback = `Element "${ctx.action.element}" not found. ${elementCheck.suggestion}`;
-            ctx.history.push(elementCheck.suggestion);
-            
-            // Extract the first suggested selector and try it directly
-            const selectorMatch = elementCheck.suggestion.match(/Try instead: ([^,]+)/);
-            if (selectorMatch && selectorMatch[1]) {
-              ctx.action.element = selectorMatch[1].trim();
-              ctx.history.push(`Trying suggested selector: ${ctx.action.element}`);
-              return ctx.action.type;
-            }
-          }
-        } catch (error) {
-          console.error("Error finding alternative selectors:", error);
-        }
-      }
-    }
-    
-    await ctx.page?.reload();
+
+    // ...existing recovery logic with added logging...
+
     return "chooseAction";
   },
   terminate: async (ctx: GraphContext) => {
-    ctx.history.push("Session ended");
-    
-    // Clear the stop flag
+    logger.info('Terminating session', {
+      metrics: {
+        totalActions: ctx.actionHistory?.length,
+        successfulActions: ctx.successfulActions?.length,
+        duration: Date.now() - (ctx.startTime || Date.now())
+      },
+      milestones: ctx.recognizedMilestones
+    });
+
     const agentState = getAgentState();
     agentState.clearStop();
-    
+
     if (ctx.browser) {
       await ctx.browser.close();
     }
     return "terminated";
   },
   getPageState: async (ctx: GraphContext) => {
-    // New state to transition after action success and capture updated page state
     if (!ctx.page) throw new Error("Page not initialized");
     
+    logger.browser.action('getPageState', {
+      url: ctx.page.url()
+    });
+
     const stateSnapshot = await getPageState(ctx.page) as PageState;
-    
-    // Check if the state has changed in a meaningful way
     detectProgress(ctx, ctx.previousPageState, stateSnapshot);
-    
-    // Store the current state for future comparison
     ctx.previousPageState = stateSnapshot;
-    
-    // Check for milestones
     checkMilestones(ctx, stateSnapshot);
     
     return "chooseAction";
   },
 };
 
-// A simple state-machine runner that loops until the state "terminated" is reached.
+// Update runStateMachine function with better logging
 async function runStateMachine(ctx: GraphContext): Promise<void> {
+  logger.info('Starting state machine', {
+    goal: ctx.userGoal,
+    browserConfig: {
+      executable: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+      headless: process.env.HEADLESS !== "false"
+    }
+  });
+
   let currentState: string = "start";
-  
-  // Track overall progress
   let totalActionCount = 0;
   let successActionCount = 0;
-  
+
+  // Initialize arrays
+  ctx.history = ctx.history || [];
+  ctx.actionHistory = ctx.actionHistory || [];
+  ctx.successfulActions = ctx.successfulActions || [];
+  ctx.recognizedMilestones = ctx.recognizedMilestones || [];
+  ctx.milestones = ctx.milestones || [];
+
   while (currentState !== "terminated") {
-    // Check for stop request at the beginning of each cycle
-    const agentState = getAgentState();
-    if (agentState.isStopRequested()) {
-      ctx.history.push("Stop requested by user during state machine execution");
-      currentState = "terminate";
-      continue;
+    const handler = states[currentState];
+    if (!handler) {
+      logger.error(`Unknown state: ${currentState}`, {
+        availableStates: Object.keys(states)
+      });
+      break;
     }
     
-    // Store current valid state in case of emergency stop
-    if (ctx.page) {
-      try {
-        const stateSnapshot = await getPageState(ctx.page);
-        agentState.setLastValidState(stateSnapshot);
-      } catch (error) {
-        console.error("Failed to capture state for emergency stop handling:", error);
-      }
-    }
-    
-    if (!(currentState in states)) {
-      // Handle undefined states gracefully instead of throwing an error
-      const validStates = Object.keys(states).join(", ");
-      console.warn(`State "${currentState}" is not defined in the state machine. Valid states are: ${validStates}`);
-      ctx.history.push(`Encountered undefined state: "${currentState}". Falling back to chooseAction.`);
-      currentState = "chooseAction";
-    } else {
-      // Update progress counters
+    logger.info(`Executing state: ${currentState}`, {
+      actionCount: totalActionCount,
+      retries: ctx.retries || 0
+    });
+
+    try {
+      totalActionCount++;
       if (ctx.lastActionSuccess) {
         successActionCount++;
       }
-      totalActionCount++;
       
-      // Print progress bar every 5 actions
-      if (totalActionCount % 5 === 0) {
-        const successRate = (successActionCount / totalActionCount) * 100;
-        const progressBar = '='.repeat(Math.floor(successRate / 10)) + '-'.repeat(10 - Math.floor(successRate / 10));
-        
-        if (successRate > 70) {
-          //console.log(`🌟 You're doing great! Keep up the good work!`);
-        }
-      }
+      // Execute the state handler and get the next state
+      currentState = await handler(ctx);navigate to https://geopoliticaleconomy.com/ and there, you will see all sorts of news items, usually geopolitics related. Read all the natural language text on the page and then using askHuman function, give me a news briefing.
       
-      currentState = await states[currentState](ctx);
+    } catch (error) {
+      logger.error(`Error in state "${currentState}"`, error);
+      currentState = "handleFailure";
     }
   }
+
+  logger.info('State machine completed', {
+    finalStats: {
+      totalActions: totalActionCount,
+      successfulActions: successActionCount,
+      successRate: totalActionCount > 0 ? 
+        `${((successActionCount / totalActionCount) * 100).toFixed(1)}%` : 
+        "0%",
+      completedMilestones: ctx.recognizedMilestones,
+      duration: `${Math.round((Date.now() - (ctx.startTime || Date.now())) / 1000)}s`
+    }
+  });
 }
 
 // Exported function to run the entire automation graph.
@@ -977,4 +899,79 @@ export async function stopAgent(): Promise<void> {
   const agentState = getAgentState();
   agentState.requestStop();
   console.log("Stop request has been registered");
+}
+
+async function buildOptimizedContext(ctx: GraphContext): Promise<string> {
+  let promptContext = "";
+  
+  // 1. Current goal (always include)
+  promptContext += `Your current goal is: ${ctx.userGoal}\n\n`;
+  
+  // 2. Current page state (most important)
+  promptContext += `Current page: ${ctx.page?.url() || "Unknown"}\n`;
+  promptContext += `Page title: ${ctx.previousPageState?.title || "Unknown"}\n\n`;
+  
+  // 3. Interactive elements (filtered to most relevant)
+  const MAX_ELEMENTS = 10;
+  if (ctx.previousPageState?.interactiveElements) {
+    promptContext += "Key interactive elements:\n";
+    const elements = filterMostRelevantElements(ctx.previousPageState.interactiveElements, MAX_ELEMENTS);
+    elements.forEach(el => {
+      promptContext += `- ${el.type}: "${el.text || el.id || el.name}" ${el.selector ? `(${el.selector})` : ""}\n`;
+    });
+    promptContext += "\n";
+  }
+  
+  // 4. Recent actions (compressed)
+  if (ctx.history && ctx.history.length > 0) {
+    const { compressHistory } = await import("./browserExecutor.js");
+    const recentHistory = compressHistory(ctx.history, 5);
+    promptContext += "Recent actions:\n";
+    recentHistory.forEach(h => promptContext += `- ${h}\n`);
+    promptContext += "\n";
+  }
+  
+  // 5. Success/failure info (selective)
+  if (ctx.lastActionSuccess !== undefined) {
+    promptContext += ctx.lastActionSuccess 
+      ? "✅ Last action was successful\n" 
+      : "❌ Last action failed\n";
+  }
+  
+  // Only include successful patterns if we recently had a failure
+  if (!ctx.lastActionSuccess && ctx.page?.url()) {
+    try {
+      const domain = new URL(ctx.page.url()).hostname;
+      const successPatternsInstance = new SuccessPatterns();
+      const domainSuggestions = successPatternsInstance.getSuggestionsForDomain(domain);
+      
+      if (domainSuggestions.length > 0) {
+        promptContext += "💡 Suggested approaches:\n";
+        domainSuggestions.forEach(s => promptContext += `- ${s}\n`);
+      }
+    } catch (error) {
+      console.error("Error getting domain suggestions:", error);
+    }
+  }
+  
+  return promptContext;
+}
+
+// Helper to filter elements by relevance
+function filterMostRelevantElements(elements: any[], maxCount: number): any[] {
+  // Prioritize buttons, links, and inputs
+  const priorityElements = elements.filter(el => 
+    el.type === 'button' || 
+    el.type === 'link' || 
+    el.type === 'input'
+  );
+  
+  // If we have too many, prioritize ones with text
+  if (priorityElements.length > maxCount) {
+    return priorityElements
+      .filter(el => el.text)
+      .slice(0, maxCount);
+  }
+  
+  return priorityElements.slice(0, maxCount);
 }

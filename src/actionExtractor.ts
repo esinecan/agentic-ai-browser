@@ -1,12 +1,12 @@
 // filepath: c:\Users\yepis\dev\agent\agentic-ai-browser\src\actionExtractor.ts
 import { Action, ActionSchema } from "./browserExecutor.js";
+import logger from './utils/logger.js';
 
 /**
  * Utility class for extracting and normalizing action objects from LLM outputs
  * regardless of format or structure inconsistencies
  */
 export class ActionExtractor {
-
   /**
    * Attempts to extract a valid action object from LLM text output using multiple strategies
    * 
@@ -14,20 +14,43 @@ export class ActionExtractor {
    * @returns A valid Action object or null if extraction failed
    */
   static extract(rawText: string): Action | null {
+    logger.debug("Starting action extraction", { 
+      textLength: rawText.length,
+      preview: rawText.substring(0, 200)
+    });
+
     try {
-      // Try multiple extraction strategies in order of reliability
-      const result = 
-        this.extractFromJson(rawText) || 
-        this.extractFromKeyValuePairs(rawText) ||
-        this.extractFromLoosePatterns(rawText);
+      const extractors = [
+        this.extractFromJson,
+        this.extractFromKeyValuePairs,
+        this.extractFromLoosePatterns,
+        this.parseDeferToHuman
+      ];
       
-      if (!result) {
-        console.debug("All extraction methods failed for text:", rawText.substring(0, 200) + (rawText.length > 200 ? "...": ""));
+      for (const extractor of extractors) {
+        logger.debug(`Attempting extraction with ${extractor.name}`);
+        const result = extractor(rawText);
+        
+        if (result) {
+          const normalized = this.normalizeActionObject(result);
+          if (normalized) {
+            logger.info(`Action extracted successfully using ${extractor.name}`, {
+              method: extractor.name,
+              result: normalized
+            });
+            return normalized;
+          }
+        }
       }
       
-      return result;
+      logger.warn("All extraction methods failed", { 
+        textPreview: rawText.substring(0, 300),
+        attemptedMethods: extractors.map(e => e.name)
+      });
+      return null;
+      
     } catch (error) {
-      console.error("Action extraction failed:", error);
+      logger.error("Action extraction failed", error);
       return null;
     }
   }
@@ -37,60 +60,32 @@ export class ActionExtractor {
    */
   private static extractFromJson(text: string): Action | null {
     try {
-      // First try: direct parsing if it's clean JSON already
-      let json: any;
+      let cleaned = text.replace(/```json/gi, '').replace(/```/gi, '').trim();
+      let parsed = JSON.parse(cleaned);
       
-      try {
-        json = JSON.parse(text);
-      } catch (e) {
-        // Clean up markdown code blocks and try again
-        const cleaned = text.replace(/```json/gi, "").replace(/```/gi, "").trim();
-        
-        try {
-          json = JSON.parse(cleaned);
-        } catch (e) {
-          // Find content between curly braces - common LLM output pattern
-          const jsonMatch = text.match(/{[\s\S]*?}/);
-          if (jsonMatch) {
-            try {
-              json = JSON.parse(jsonMatch[0]);
-            } catch (e) {
-              // Even the extracted object isn't valid JSON
-              // Try to fix truncated JSON - common with LLMs
-              let extracted = jsonMatch[0];
-              
-              // If JSON appears to be truncated (no closing brace)
-              if (!extracted.endsWith("}")) {
-                extracted += "}";
-              }
-              
-              // Check for unclosed quotes in property values
-              const fixedJson = extracted.replace(/([^"\\])"([^"]*?)$/g, '$1"$2"');
-              
-              try {
-                json = JSON.parse(fixedJson);
-              } catch (e) {
-                // Still couldn't parse
-                return null;
-              }
-            }
-          }
-        }
+      if (parsed && typeof parsed === 'object') {
+        logger.debug("JSON extraction succeeded", {
+          parsedStructure: parsed
+        });
+        return parsed as Action;
       }
-
-      if (!json) return null;
-      
-      return this.normalizeActionObject(json);
     } catch (error) {
-      console.error("JSON extraction failed:", error);
-      return null;
+      // Only log if it looks like it might have been JSON
+      if (text.includes('{') && text.includes('}')) {
+        logger.debug("JSON parsing failed on potential JSON text", {
+          errorMessage: error instanceof Error ? error.message : String(error),
+          textPreview: text.substring(0, 100)
+        });
+      }
     }
+    return null;
   }
 
   /**
    * Extracts key-value pairs using regex patterns to build an action
    */
   private static extractFromKeyValuePairs(text: string): Action | null {
+    logger.debug("Attempting key-value pair extraction");
     try {
       // Enhanced regex for key-value pairs that explicitly handles quoted and unquoted values
       // Captures: key: "quoted value" or key: 'single quoted' or key: unquoted_value
@@ -134,9 +129,18 @@ export class ActionExtractor {
         delete extractedPairs["_action"];
       }
 
+      // Log only if we found something
+      if (Object.keys(extractedPairs).length > 0) {
+        logger.debug("Found key-value pairs", {
+          pairs: extractedPairs,
+          typeField: typeFound ? "Found type field" : "Using action field",
+          actionField: actionFound
+        });
+      }
+
       return this.normalizeActionObject(extractedPairs);
     } catch (error) {
-      console.error("Key-value extraction failed:", error);
+      logger.error("Key-value extraction failed", error);
       return null;
     }
   }
@@ -148,6 +152,12 @@ export class ActionExtractor {
     try {
       // Look for common action words
       const actionTypes = ["click", "input", "navigate", "scroll", "extract", "wait", "askHuman", "askhuman", "ask_human", "ask"];
+      
+      logger.debug("Searching for action patterns", {
+        textLength: text.length,
+        actionTypesSearched: actionTypes
+      });
+
       let actionType: string | null = null;
       
       // Find the first mention of an action type
@@ -209,18 +219,61 @@ export class ActionExtractor {
       if (value) action.value = value;
       if (question) action.question = question;
       
+      logger.debug("Found action pattern", {
+        type: actionType,
+        element,
+        value,
+        question
+      });
+
       // Try to validate it
       return this.normalizeActionObject(action);
     } catch (error) {
-      console.error("Loose pattern extraction failed:", error);
+      logger.error("Pattern extraction failed", error);
       return null;
     }
+  }
+
+  private static parseDeferToHuman(text: string): Action | null {
+    const needsHelpIndicators = [
+      'need help',
+      'ask human',
+      'confused',
+      'not sure',
+      'unclear',
+      'uncertain',
+      'help required',
+      'assistance needed'
+    ];
+
+    const matchingIndicators = needsHelpIndicators.filter(indicator => 
+      text.toLowerCase().includes(indicator)
+    );
+
+    if (matchingIndicators.length > 0) {
+      const question = text.length > 200 ? text.substring(0, 200) + "..." : text;
+      
+      logger.debug("Converting to askHuman due to help indicators", {
+        matchedPhrases: matchingIndicators,
+        questionPreview: question
+      });
+      
+      return {
+        type: 'askHuman',
+        question,
+        selectorType: 'css',
+        maxWait: 5000
+      };
+    }
+    return null;
   }
 
   /**
    * Normalizes any action-like object to conform to the Action schema
    */
   private static normalizeActionObject(obj: any): Action | null {
+    logger.debug("Normalizing action", obj);
+
     if (!obj) return null;
     
     try {
@@ -336,20 +389,23 @@ export class ActionExtractor {
       }
       
       // Debug action before validation
-      console.debug("Action before validation:", normalized);
+      logger.debug("Normalized action before validation", normalized);
       
       // Validate with Zod schema
       const result = ActionSchema.safeParse(normalized);
       if (result.success) {
+        logger.info("Action validation passed", result.data);
         return result.data;
       } else {
-        console.error("Action validation failed:", JSON.stringify(result.error.issues, null, 2));
-        console.error("Failed object:", JSON.stringify(normalized, null, 2));
+        logger.error("Action validation failed", {
+          errors: result.error.issues,
+          failedObject: normalized
+        });
       }
       
       return null;
     } catch (error) {
-      console.error("Action normalization failed:", error);
+      logger.error("Action normalization failed", error);
       return null;
     }
   }
