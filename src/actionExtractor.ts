@@ -7,18 +7,22 @@ import logger from './utils/logger.js';
  * regardless of format or structure inconsistencies
  */
 export class ActionExtractor {
-  /**
-   * Attempts to extract a valid action object from LLM text output using multiple strategies
-   * 
-   * @param rawText - The raw text from LLM response
-   * @returns A valid Action object or null if extraction failed
-   */
+  // Static helper method that uses instance methods internally
   static extract(rawText: string): Action | null {
-    logger.debug("Starting action extraction", { 
-      textLength: rawText.length,
-      preview: rawText.substring(0, 200)
-    });
+    try {
+      logger.debug("Starting action extraction", { 
+        textLength: rawText.length,
+        preview: rawText.substring(0, 200)
+      });
+      const extractor = new ActionExtractor();
+      return extractor.processRawAction(rawText);
+    } catch (error) {
+      logger.error("Action extraction failed", error);
+      return null;
+    }
+  }
 
+  processRawAction(rawText: string): Action | null {
     try {
       const extractors = [
         this.extractFromJson,
@@ -29,7 +33,7 @@ export class ActionExtractor {
       
       for (const extractor of extractors) {
         logger.debug(`Attempting extraction with ${extractor.name}`);
-        const result = extractor(rawText);
+        const result = extractor.call(this, rawText);
         
         if (result) {
           const normalized = this.normalizeActionObject(result);
@@ -58,7 +62,7 @@ export class ActionExtractor {
   /**
    * Attempts to extract an action from properly formatted JSON
    */
-  private static extractFromJson(text: string): Action | null {
+  private extractFromJson(text: string): Action | null {
     try {
       let cleaned = text.replace(/```json/gi, '').replace(/```/gi, '').trim();
       let parsed = JSON.parse(cleaned);
@@ -84,7 +88,7 @@ export class ActionExtractor {
   /**
    * Extracts key-value pairs using regex patterns to build an action
    */
-  private static extractFromKeyValuePairs(text: string): Action | null {
+  private extractFromKeyValuePairs(text: string): Action | null {
     logger.debug("Attempting key-value pair extraction");
     try {
       // Enhanced regex for key-value pairs that explicitly handles quoted and unquoted values
@@ -148,7 +152,7 @@ export class ActionExtractor {
   /**
    * Last resort extraction for very loosely formatted texts
    */
-  private static extractFromLoosePatterns(text: string): Action | null {
+  private extractFromLoosePatterns(text: string): Action | null {
     try {
       // Look for common action words
       const actionTypes = ["click", "input", "navigate", "scroll", "extract", "wait", "askHuman", "askhuman", "ask_human", "ask"];
@@ -234,7 +238,7 @@ export class ActionExtractor {
     }
   }
 
-  private static parseDeferToHuman(text: string): Action | null {
+  private parseDeferToHuman(text: string): Action | null {
     const needsHelpIndicators = [
       'need help',
       'ask human',
@@ -271,7 +275,7 @@ export class ActionExtractor {
   /**
    * Normalizes any action-like object to conform to the Action schema
    */
-  private static normalizeActionObject(obj: any): Action | null {
+  private normalizeActionObject(obj: any): Action | null {
     logger.debug("Normalizing action", obj);
 
     if (!obj) return null;

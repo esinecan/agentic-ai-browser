@@ -6,26 +6,49 @@ import { ActionExtractor } from "./actionExtractor.js";
 import { LLMProcessor } from "./llmProcessor.js";
 import logger from './utils/logger.js';
 
-const apiKey = process.env.GEMINI_API_KEY || "default_api_key";
+interface GeminiConfig {
+  modelName: string;
+  maxOutputTokens: number;
+  temperature: number;
+}
+
+const defaultConfig: GeminiConfig = {
+  modelName: "gemini-pro",
+  maxOutputTokens: 8000,
+  temperature: 0.7,
+};
+
+const apiKey = process.env.GEMINI_API_KEY;
+
 if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not defined. Please set it in your environment variables.");
+  logger.error('GEMINI_API_KEY is not defined. Please set it in the environment variables.');
+  throw new Error("GEMINI_API_KEY is not defined. Please set it in the environment variables.");
 }
 
 class GeminiProcessor implements LLMProcessor {
   private genAI: GoogleGenerativeAI;
   private model: any;
   private tokenCount: number = 0;
-  private readonly MAX_TOKENS = 30000; // Gemini-Pro has a larger context window than Ollama
+  private readonly MAX_TOKENS = 30000;
   private lastResponse: any = null;
+  private config: GeminiConfig;
 
-  constructor() {
-    this.genAI = new GoogleGenerativeAI(apiKey);
+  constructor(config: Partial<GeminiConfig> = {}) {
+    this.config = { ...defaultConfig, ...config };
+    // We can safely assert apiKey is string here since we checked above
+    this.genAI = new GoogleGenerativeAI(apiKey as string);
     this.model = this.genAI.getGenerativeModel({
-      model: "gemini-pro",
+      model: this.config.modelName,
       generationConfig: {
-        maxOutputTokens: 8000,
-        temperature: 0.7,
+        maxOutputTokens: this.config.maxOutputTokens,
+        temperature: this.config.temperature,
       },
+    });
+
+    logger.info('GeminiProcessor initialized', {
+      model: this.config.modelName,
+      maxOutputTokens: this.config.maxOutputTokens,
+      temperature: this.config.temperature
     });
   }
 
@@ -52,7 +75,7 @@ class GeminiProcessor implements LLMProcessor {
   private async processPrompt(prompt: string): Promise<string> {
     logger.llm.request('Gemini', {
       modelInfo: {
-        model: "gemini-pro",
+        model: this.config.modelName,
         contextSize: this.lastResponse ? 'Using previous context' : 'New context',
         tokenCount: this.tokenCount,
         maxTokens: this.MAX_TOKENS
@@ -82,11 +105,6 @@ class GeminiProcessor implements LLMProcessor {
       const history = this.lastResponse ? [this.lastResponse] : [];
       const result = await this.model.generateContent({
         contents: [...history, { role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          candidateCount: 1,
-          maxOutputTokens: 8000,
-        },
       });
 
       const responseText = result.response.text();
@@ -103,7 +121,7 @@ class GeminiProcessor implements LLMProcessor {
     } catch (error) {
       logger.llm.error('Gemini', {
         error,
-        lastResponseSize: this.lastResponse?.parts[0].text.length,
+        lastResponseSize: this.lastResponse?.parts[0]?.text?.length,
         tokenCount: this.tokenCount
       });
       this.lastResponse = null;
@@ -114,10 +132,12 @@ class GeminiProcessor implements LLMProcessor {
 
   async generateNextAction(state: object, context: GraphContext): Promise<GraphContext["action"] | null> {
     try {
+      const { url, title } = state as { url: string; title: string };
+      
       logger.info('Generating next action', {
         state: {
-          url: (state as any).url,
-          title: (state as any).title,
+          url,
+          title,
           pageAnalysis: {
             contentLength: context.pageContent?.length,
             interactiveElements: context.previousPageState?.interactiveElements?.length
@@ -128,20 +148,19 @@ class GeminiProcessor implements LLMProcessor {
           lastAction: context.action,
           retryCount: context.retries,
           successCount: context.successCount,
-          milestonesAchieved: context.recognizedMilestones,
           recentHistory: context.history?.slice(-3)
         }
       });
 
       const prompt = `
-You are a web automation assistant using Google Gemini AI.
+You are a web automation assistant.
 ${context.userGoal ? `TASK: ${context.userGoal}` : 'Analyze the page and suggest the next action.'}
 
 ${this.buildFeedbackSection(context)}
 
 CURRENT PAGE:
-URL: ${(state as any).url}
-TITLE: ${(state as any).title}
+URL: ${url}
+TITLE: ${title}
 
 ${context.pageContent ? `PAGE CONTENT:\n${this.truncate(context.pageContent, 6000)}` : ''}
 
@@ -209,5 +228,5 @@ Respond with a single JSON object for our next action.`;
   }
 }
 
-// Export a singleton instance
+// Export a singleton instance with default config
 export const geminiProcessor: LLMProcessor = new GeminiProcessor();
