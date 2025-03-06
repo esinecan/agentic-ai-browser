@@ -641,27 +641,6 @@ function findRepeatedPatterns(history: string[]): { pattern: string, count: numb
     if (clickMatch) {
       const key = `clicking ${clickMatch[1]}`;
       const success = !!clickMatch[2];
-    compressed.push(...history.slice(-recentItems));
-  }
-  
-  return compressed;
-}
-
-/**
- * Find repeated patterns in the history
- */
-function findRepeatedPatterns(history: string[]): { pattern: string, count: number, success: boolean }[] {
-  const patterns: Map<string, { count: number, success: boolean }> = new Map();
-  
-  for (const item of history) {
-    // Look for common action patterns
-    let matched = false;
-    
-    // Click pattern
-    const clickMatch = item.match(/Clicked (.+?)( successfully)?/);
-    if (clickMatch) {
-      const key = `clicking ${clickMatch[1]}`;
-      const success = !!clickMatch[2];
       const current = patterns.get(key) || { count: 0, success };
       patterns.set(key, { count: current.count + 1, success });
       matched = true;
@@ -701,8 +680,12 @@ export async function navigate(page: Page, url: string): Promise<boolean> {
       try {
         const currentUrl = new URL(page.url());
         url = `${currentUrl.origin}${url}`;
+        logger.debug('Converted relative URL to absolute', { 
+          relative: url,
+          absolute: `${currentUrl.origin}${url}`
+        });
       } catch (err) {
-        console.error("Failed to parse current URL:", err);
+        logger.error("Failed to parse current URL:", err);
       }
     }
     
@@ -710,7 +693,7 @@ export async function navigate(page: Page, url: string): Promise<boolean> {
     try {
       new URL(url);
     } catch (e) {
-      console.error(`Invalid URL: ${url}`);
+      logger.error(`Invalid URL: ${url}`);
       return false;
     }
     
@@ -718,7 +701,7 @@ export async function navigate(page: Page, url: string): Promise<boolean> {
     await page.goto(url, { timeout: DEFAULT_NAVIGATION_TIMEOUT });
     return true;
   } catch (error) {
-    console.error(`Navigation failed: ${error}`);
+    logger.error(`Navigation failed: ${error}`);
     return false;
   }
 }

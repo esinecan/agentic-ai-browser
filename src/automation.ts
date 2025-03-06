@@ -854,7 +854,7 @@ async function runStateMachine(ctx: GraphContext): Promise<void> {
       }
       
       // Execute the state handler and get the next state
-      currentState = await handler(ctx);navigate to https://geopoliticaleconomy.com/ and there, you will see all sorts of news items, usually geopolitics related. Read all the natural language text on the page and then using askHuman function, give me a news briefing.
+      currentState = await handler(ctx);
       
     } catch (error) {
       logger.error(`Error in state "${currentState}"`, error);
