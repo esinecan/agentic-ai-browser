@@ -1,7 +1,7 @@
 // src/core/state-management/StateMachine.ts
 import { AgentContext, StateTransition, StateHandler, Action } from '../shared/types.js';
 import { ContextManager } from './ContextManager.js';
-import { ActionProcessor } from '../action-handling/ActionExtractor.js';
+import { ActionExtractor } from '../action-handling/ActionExtractor.js';
 import { RecoveryEngine } from './RecoveryEngine.js';
 
 export class AgentStateMachine {
@@ -9,14 +9,14 @@ export class AgentStateMachine {
   public currentStateName: string;
   private states: Record<string, StateHandler>;
   private persistence: ContextManager;
-  private actionProcessor: ActionProcessor;
+  private actionExtractor: ActionExtractor;
   private recoveryEngine: RecoveryEngine;
 
   constructor(initialContext: Partial<AgentContext>) {
     this.persistence = new ContextManager();
     this.context = this.persistence.loadContext(initialContext);
     this.currentStateName = 'initialize';
-    this.actionProcessor = new ActionProcessor(this.context);
+    this.actionExtractor = new ActionExtractor(this.context);
     this.recoveryEngine = new RecoveryEngine(this.context);
     this.states = {
       'initialize': this.handleInitialize.bind(this),
@@ -91,13 +91,14 @@ export class AgentStateMachine {
     };
   }
 
-  // Action Selection: use the ActionProcessor to parse a raw action string.
+  // Action Selection: use the ActionExtractor to parse a raw action string.
   private async handleActionSelection(context: AgentContext): Promise<StateTransition> {
     console.log('Selecting action...');
     // Simulate receiving a raw action from an LLM.
     const rawAction = '{"type": "click", "selector": "#login"}';
     try {
-      const action: Action = await this.actionProcessor.processRawAction(rawAction);
+      const action = await this.actionExtractor.processRawAction(rawAction);
+      if (!action) throw new Error("Failed to extract action with call from state manager");
       // Record the action in history.
       context.actionHistory.push({
         action,

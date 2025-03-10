@@ -2,7 +2,7 @@ import { ChatOllama } from '@langchain/ollama';
 import dotenv from 'dotenv';
 import { LLMProcessor } from "./llmProcessor.js";
 import { GraphContext } from "./browserExecutor.js";
-import { ActionExtractor } from "./actionExtractor.js";
+import { ActionExtractor } from "./core/action-handling/ActionExtractor.js";
 import logger from './utils/logger.js';
 
 dotenv.config();
@@ -158,34 +158,34 @@ class OllamaProcessor implements LLMProcessor {
         }
       });
 
-      let prompt = `
-You're talking to an automated system, that is supervised by a human. 
-The reason this system is sitting between you is, to enable to use a web browser. This middleware will be your eyes and hands on the web.
-You can ask the system to click on elements, input text, navigate to a different page, wait for a certain amount of time, or ask for human help. 
-The system will try to understand your request and perform the action on the web page. 
-If the system is not able to understand your request, it will ask you to clarify or provide more information.
-
+      let prompt = `Hi :)
+- You're talking to an automated system, that is supervised by a human. 
+- The reason this system is sitting between you is, to enable to use a web browser.
+- This middleware will be your eyes and hands on the web.
+- You can ask the system to click on elements, input text, navigate to a different page, wait for a certain amount of time, or ask for human help. 
+- The system will try to understand your request and perform the action on the web page.
+---
 ${context.userGoal ? `YOUR CURRENT TASK: ${context.userGoal}` : 'This is what the browser is currently displaying.'}
-
+---
 ${this.buildFeedbackSection(context)}
-
-CURRENT PAGE FOR YOU TO PARSE THE CONTENT OF:
+---
+THIS IS THE SIMPLIFIED HTML CONTENT OF THE PAGE, IN LIEU OF YOU "SEEING" THE PAGE:
 URL: ${(state as any).url}
 TITLE: ${(state as any).title}
 
 ${context.pageContent ? `PAGE CONTENT:\n${this.truncate(context.pageContent, 2000)}` : 'PAGE CONTENT: [empty]'}
 ---
-AVAILABLE ACTIONS:
+THESE ARE ACTIONS AVAILABLE TO YOU:
 - Click: { "type": "click", "element": "selector", "description": "description" }
 - Input: { "type": "input", "element": "selector", "value": "text" }
 - Navigate: { "type": "navigate", "value": "url" }
 - Wait: { "type": "wait", "maxWait": milliseconds }
 - AskHuman: { "type": "askHuman", "question": "This is your direct line to the human end of this system. Want human to pass a bot check for you? Confused? Saying hi? Succeeded & reporting back? This is the thing to use." }
-
+---
 TASK HISTORY:
 ${context.compressedHistory ? context.compressedHistory.slice(-5).join('\n') : 
   context.history ? context.history.slice(-5).join('\n') : 'No previous actions.'}
-
+---
 Respond with a single JSON object for our next action, based on the available actions and your current task.
 `;
       // Replace sequences of 2 or more spaces or any tab with a single space:
@@ -200,14 +200,15 @@ Respond with a single JSON object for our next action, based on the available ac
 
       const responseText = await this.processPrompt(prompt);
 
-      const action = await ActionExtractor.extract(responseText);
+      const extractor = new ActionExtractor();
+      const action = await extractor.processRawAction(responseText);
       
       logger.info('Action extraction completed', {
         success: !!action,
         action: action,
         responseLength: responseText.length
       });
-      
+      if (!action) throw new Error("Failed to extract action from response");
       return action;
     } catch (error) {
       logger.error('Failed to generate next action', {

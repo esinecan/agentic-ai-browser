@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GraphContext } from "./browserExecutor.js";
-import { ActionExtractor } from "./actionExtractor.js";
+import { ActionExtractor } from "./core/action-handling/ActionExtractor.js";
 import { LLMProcessor } from "./llmProcessor.js";
 import logger from './utils/logger.js';
 
@@ -203,13 +203,15 @@ Respond with a single JSON object for our next action.`;
         responsePreview: responseText.substring(0, 200)
       });
 
-      const action = ActionExtractor.extract(responseText);
+      const extractor = new ActionExtractor();
+      const action = await extractor.processRawAction(responseText);
       
       logger.info('Action extraction completed', {
         success: !!action,
         action: action
       });
 
+      if (!action) throw new Error("Failed to extract action from response");
       return action;
     } catch (error) {
       logger.error('Failed to generate next action', {

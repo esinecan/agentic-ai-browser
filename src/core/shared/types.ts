@@ -8,9 +8,15 @@ export interface BrowserState {
 }
 
 export interface Action {
-  type: string;
+  type: "input" | "navigate" | "click" | "wait" | "askHuman";
   selector?: string;
+  element?: string;
   value?: string;
+  question?: string;
+  description?: string;
+  selectorType: "css" | "xpath" | "text";
+  maxWait: number;
+  previousUrl?: string;
 }
 
 export interface AgentContext {

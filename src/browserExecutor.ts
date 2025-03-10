@@ -1,8 +1,6 @@
 import { chromium, Browser, Page, ElementHandle, BrowserContext } from "playwright";
 import dotenv from "dotenv";
 import { z } from "zod";
-import fs from "fs";
-import path from "path";
 import logger from './utils/logger.js';
 
 dotenv.config();
