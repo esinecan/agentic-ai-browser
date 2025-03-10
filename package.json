@@ -2,26 +2,28 @@
     "name": "playwright-langchain-bot",
     "version": "1.0.0",
     "description": "A web automation bot using Playwright and LangChain",
-    "main": "index.js",
+    "main": "dist/index.js",
     "type": "module",
     "scripts": {
-        "start": "node dist/index.js",
-        "dev": "ts-node src/index.ts",
+        "start": "node --inspect=9229 dist/index.js",
+        "dev": "ts-node --esm src/index.ts",
         "build": "tsc",
         "lint": "eslint . --ext .ts",
-        "test": "jest"
+        "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
     },
     "dependencies": {
         "@google/generative-ai": "^0.22.0",
         "@langchain/langgraph": "^0.2.49",
         "@langchain/ollama": "^0.2.0",
         "@playwright/test": "^1.50.1",
+        "cheerio": "^1.0.0",
         "dotenv": "^16.4.7",
         "langchain": "^0.1.4",
         "playwright": "^1.42.0",
         "zod": "^3.21.4"
     },
     "devDependencies": {
+        "@types/domhandler": "^2.4.5",
         "@types/jest": "^29.5.4",
         "@types/node": "^18.16.19",
         "eslint": "^8.56.0",

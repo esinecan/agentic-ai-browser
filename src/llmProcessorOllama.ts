@@ -32,10 +32,12 @@ class OllamaProcessor implements LLMProcessor {
     return '';
   }
 
-  // Helper function to truncate text
+  // Helper function to truncate text (modified)
   private truncate(text: string | undefined, maxLength: number): string {
-    if (!text || text.length <= maxLength) return text || '';
-    return text.substring(0, maxLength) + '...[content truncated]';
+    if (!text) return '';
+    // Collapse extra whitespace and trim
+    const trimmed = text.trim().replace(/\s+/g, ' ');
+    return trimmed.length <= maxLength ? trimmed : trimmed.substring(0, maxLength) + '...[truncated]';
   }
   
   private logPromptContext(context: Record<string, any>) {
@@ -93,8 +95,17 @@ class OllamaProcessor implements LLMProcessor {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(options)
       });
+
+      logger.error('LLM request sent', {
+        requestText: prompt,
+      });
       
       const response = await result.json();
+
+      logger.error('LLM response received', {
+        responseText: response.response
+      });
+      
       
       // Store context for next interaction
       if (response.context) {
@@ -126,6 +137,11 @@ class OllamaProcessor implements LLMProcessor {
   }
   
   async generateNextAction(state: object, context: GraphContext): Promise<GraphContext["action"] | null> {
+    // Ensure context.pageContent is set from state if undefined
+    if (!context.pageContent && (state as any).pageContent) {
+      context.pageContent = (state as any).pageContent;
+    }
+    
     try {
       logger.info('Generating next action', {
         state: {
@@ -142,23 +158,23 @@ class OllamaProcessor implements LLMProcessor {
         }
       });
 
-      const prompt = `
-You are a web automation assistant helping complete tasks by controlling a browser.
+      let prompt = `
+You're talking to an automated system, that is supervised by a human. 
+The reason this system is sitting between you is, to enable to use a web browser. This middleware will be your eyes and hands on the web.
+You can ask the system to click on elements, input text, navigate to a different page, wait for a certain amount of time, or ask for human help. 
+The system will try to understand your request and perform the action on the web page. 
+If the system is not able to understand your request, it will ask you to clarify or provide more information.
 
-${context.userGoal ? `TASK: ${context.userGoal}` : 'Analyze the page and suggest the next action.'}
+${context.userGoal ? `YOUR CURRENT TASK: ${context.userGoal}` : 'This is what the browser is currently displaying.'}
 
 ${this.buildFeedbackSection(context)}
 
-CURRENT PAGE:
+CURRENT PAGE FOR YOU TO PARSE THE CONTENT OF:
 URL: ${(state as any).url}
 TITLE: ${(state as any).title}
 
-${context.pageContent ? `PAGE CONTENT:\n${this.truncate(context.pageContent, 6000)}` : ''}
-
-${context.successfulActions && context.successfulActions.length > 0
-  ? `SUCCESSFUL ACTIONS ON THIS SITE:\n${context.successfulActions.slice(-3).join('\n')}`
-  : ''}
-
+${context.pageContent ? `PAGE CONTENT:\n${this.truncate(context.pageContent, 2000)}` : 'PAGE CONTENT: [empty]'}
+---
 AVAILABLE ACTIONS:
 - Click: { "type": "click", "element": "selector", "description": "description" }
 - Input: { "type": "input", "element": "selector", "value": "text" }
@@ -170,8 +186,10 @@ TASK HISTORY:
 ${context.compressedHistory ? context.compressedHistory.slice(-5).join('\n') : 
   context.history ? context.history.slice(-5).join('\n') : 'No previous actions.'}
 
-Respond with a single JSON object for our next action.
+Respond with a single JSON object for our next action, based on the available actions and your current task.
 `;
+      // Replace sequences of 2 or more spaces or any tab with a single space:
+      prompt = prompt.replace(/[\t ]{2,}/g, ' ');
       
       logger.debug('Built Ollama prompt', {
         promptLength: prompt.length,

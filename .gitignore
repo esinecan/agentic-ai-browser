@@ -3,6 +3,7 @@ dist/
 
 logs/
 .github/
+.history/
 .vscode/
 screenshots/
 *.log

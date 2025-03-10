@@ -63,27 +63,30 @@ export class ActionExtractor {
    * Attempts to extract an action from properly formatted JSON
    */
   private extractFromJson(text: string): Action | null {
-    try {
-      let cleaned = text.replace(/```json/gi, '').replace(/```/gi, '').trim();
-      let parsed = JSON.parse(cleaned);
-      
-      if (parsed && typeof parsed === 'object') {
-        logger.debug("JSON extraction succeeded", {
-          parsedStructure: parsed
-        });
-        return parsed as Action;
-      }
-    } catch (error) {
-      // Only log if it looks like it might have been JSON
-      if (text.includes('{') && text.includes('}')) {
-        logger.debug("JSON parsing failed on potential JSON text", {
+    const jsonRegex = /{[\s\S]*?}/g; // matches any JSON-like object
+    let match: RegExpExecArray | null;
+  
+    while ((match = jsonRegex.exec(text)) !== null) {
+      const jsonCandidate = match[0];
+  
+      try {
+        const parsed = JSON.parse(jsonCandidate);
+        if (parsed && typeof parsed === 'object') {
+          logger.debug("JSON extraction succeeded", { parsedStructure: parsed });
+          return parsed as Action;
+        }
+      } catch (error) {
+        logger.debug("JSON parsing failed for candidate", {
           errorMessage: error instanceof Error ? error.message : String(error),
-          textPreview: text.substring(0, 100)
+          candidate: jsonCandidate.substring(0, 100)
         });
+        // Continue searching subsequent matches
       }
     }
+  
+    logger.debug("No valid JSON found in input.");
     return null;
-  }
+  }  
 
   /**
    * Extracts key-value pairs using regex patterns to build an action

@@ -68,5 +68,12 @@
     "domain": "duckduckgo.com",
     "successCount": 1,
     "lastSuccess": "2025-03-03T19:55:21.803Z"
+  },
+  {
+    "actionType": "navigate",
+    "selector": "https://geopoliticaleconomy.com/",
+    "domain": "geopoliticaleconomy.com",
+    "successCount": 1,
+    "lastSuccess": "2025-03-09T23:21:51.875Z"
   }
 ]

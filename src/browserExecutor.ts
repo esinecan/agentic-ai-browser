@@ -3,7 +3,6 @@ import dotenv from "dotenv";
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
-import { extractPageContent } from './pageContentExtractor.js';
 import logger from './utils/logger.js';
 
 dotenv.config();
@@ -77,12 +76,12 @@ export async function launchBrowser(): Promise<Browser> {
 // Create a new page and navigate to the starting URL.
 export async function createPage(browser: Browser): Promise<Page> {
   logger.browser.action('createPage', {
-    startUrl: process.env.START_URL || "https://you.com"
+    startUrl: process.env.START_URL || "https://online.bonjourr.fr/"
   });
 
   try {
     const page = await browser.newPage();
-    await page.goto(process.env.START_URL || "https://you.com");
+    await page.goto(process.env.START_URL || "https://online.bonjourr.fr/");
     
     logger.info('Page created and navigated to start URL', {
       url: await page.url(),
@@ -486,34 +485,29 @@ function buildSelectorFromMatch(match: any): string {
 
 // Capture a snapshot of the current page state and save a screenshot locally.
 export async function getPageState(page: Page): Promise<object> {
-  logger.browser.action('getState', {
-    url: page.url()
-  });
+  logger.browser.action('getState', { url: page.url() });
 
   try {
-    // Get the essential page information
-    const [title, url, rawContent] = await Promise.all([
-      page.title(),
-      page.url(),
-      extractPageContent(page)
-    ]);
+    const url = page.url();
+    const title = await page.title();
 
-    // Process and structure the content
-    const content = rawContent
-      .replace(/\s+/g, ' ')  // Normalize whitespace
-      .trim();
+    // Extract DOM snapshot (includes raw HTML) 
+    const domSnapshot = await extractDOMSnapshot(page);
+
+    // Use pageInterpreter to return unified page content
+    const { generatePageSummary } = await import('./pageInterpreter.js');
+    const pageContent = await generatePageSummary(page, domSnapshot);
 
     logger.debug('Page state captured', {
       url,
       title,
-      contentLength: content.length
+      pageContentLength: pageContent.length
     });
 
-    // Return a clean, structured state object
     return {
       url,
       title,
-      pageContent: content,
+      pageContent
     };
   } catch (error) {
     logger.browser.error('getState', error);
@@ -521,9 +515,68 @@ export async function getPageState(page: Page): Promise<object> {
       url: page.url(),
       title: await page.title(),
       error: "Failed to extract page content",
-      pageContent: "" // Ensure we always have this field
+      pageContent: ""
     };
   }
+}
+
+// New function to extract DOM snapshot with all needed elements
+async function extractDOMSnapshot(page: Page): Promise<any> {
+  return page.evaluate(() => {
+    const rawContent = document.body.innerHTML;
+
+    const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+      .map(h => ({
+        tag: h.tagName.toLowerCase(),
+        text: h.textContent?.trim() || ''
+      }));
+
+    // Extract links
+    const links = Array.from(document.querySelectorAll('a')).map(a => ({
+      text: a.textContent?.trim() || '',
+      url: a.href || '',
+      title: a.getAttribute('title') || null,
+      aria: a.getAttribute('aria-label') || null
+    }));
+    
+    // Extract buttons
+    const buttons = Array.from(document.querySelectorAll('button, [role="button"]')).map(b => 
+      b.textContent?.trim() || b.getAttribute('aria-label') || b.getAttribute('title') || ''
+    );
+    
+    // Extract inputs
+    const inputs = Array.from(document.querySelectorAll('input, textarea, select')).map(input => {
+      if (input instanceof HTMLInputElement) {
+        return {
+          type: input.type,
+          name: input.name,
+          id: input.id,
+          placeholder: input.placeholder || null,
+          value: input.value || null
+        };
+      }
+      return input.id || input.getAttribute('name') || input.getAttribute('placeholder') || 'input field';
+    });
+    
+    // Extract landmarks
+    const landmarks = Array.from(
+      document.querySelectorAll('[role="main"], [role="navigation"], [role="search"], main, nav, article, section, form')
+    ).map(l => ({
+      role: l.getAttribute('role') || l.tagName.toLowerCase(),
+      text: l.textContent?.trim() || null
+    }));
+    
+    // Return complete snapshot including raw HTML:
+    return {
+      title: document.title,
+      headings,
+      links,
+      buttons,
+      inputs,
+      landmarks,
+      rawContent: rawContent.substring(0, 5000)
+    };
+  });
 }
 
 // Verify that an action succeeded based on its type.
