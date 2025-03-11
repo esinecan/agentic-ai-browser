@@ -323,7 +323,13 @@ Your guidance:`;
     });
 
     const humanResponse = await promptUser(formattedQuestion);
-    
+    const newGoal = await promptUser("Do you want to update the goal? (Leave empty to keep current goal): ");
+    if (newGoal.trim() !== "") {
+      ctx.userGoal = newGoal;
+      ctx.history.push(`User updated goal to: ${newGoal}`);
+      initializeMilestones(ctx);
+    }
+
     logger.info("Received human response", {
       responsePreview: humanResponse.substring(0, 100)
     });

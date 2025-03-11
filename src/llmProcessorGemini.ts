@@ -13,8 +13,8 @@ interface GeminiConfig {
 }
 
 const defaultConfig: GeminiConfig = {
-  modelName: "gemini-pro",
-  maxOutputTokens: 8000,
+  modelName: "gemini-2.0-flash-lite",
+  maxOutputTokens: 18000,
   temperature: 0.7,
 };
 
@@ -43,13 +43,32 @@ class GeminiProcessor implements LLMProcessor {
         maxOutputTokens: this.config.maxOutputTokens,
         temperature: this.config.temperature,
       },
+      systemInstruction: `
+### You are an automation agent controlling a web browser.
+### Your only goal is to execute web automation tasks precisely.
+### You can return ONLY ONE of the 5 valid action types per response:
+
+- Click: { "type": "click", "element": "selector", "description": "description" }
+- Input: { "type": "input", "element": "selector", "value": "text" }
+- Navigate: { "type": "navigate", "value": "url" }
+- Wait: { "type": "wait", "maxWait": milliseconds }
+- AskHuman: { "type": "askHuman", "question": "This is how you communicate with human user." }
+
+---
+# EXAMPLES:
+1. If asked to navigate: { "type": "navigate", "value": "https://example.com" }
+2. If asked to click: { "type": "click", "element": "#submit-button" }
+3. If asked to summarize, use askHuman: { "type": "askHuman", "question": "The summary you asked for: lorem ipsum dolor sit am...." }
+`
     });
 
-    logger.info('GeminiProcessor initialized', {
-      model: this.config.modelName,
-      maxOutputTokens: this.config.maxOutputTokens,
-      temperature: this.config.temperature
-    });
+    if(process.env.LLM_PROVIDER === 'gemini') {
+      logger.info('Gemini processor initialized', {
+        modelName: this.config.modelName,
+        maxOutputTokens: this.config.maxOutputTokens,
+        temperature: this.config.temperature
+      });
+    }
   }
 
   private logPromptContext(context: Record<string, any>) {
@@ -132,6 +151,7 @@ class GeminiProcessor implements LLMProcessor {
 
   async generateNextAction(state: object, context: GraphContext): Promise<GraphContext["action"] | null> {
     try {
+      context.pageContent = (state as any).pageContent;
       const { url, title } = state as { url: string; title: string };
       
       logger.info('Generating next action', {
@@ -152,61 +172,36 @@ class GeminiProcessor implements LLMProcessor {
         }
       });
 
-      const prompt = `
-You are a web automation assistant.
-${context.userGoal ? `TASK: ${context.userGoal}` : 'Analyze the page and suggest the next action.'}
-
+      let prompt = `
+---
+${context.userGoal ? `YOUR CURRENT TASK: ${context.userGoal}` : 'This is what the browser is currently displaying.'}
+---
 ${this.buildFeedbackSection(context)}
+---
+THIS IS THE SIMPLIFIED HTML CONTENT OF THE PAGE, IN LIEU OF YOU "SEEING" THE PAGE:
+URL: ${(state as any).url}
+TITLE: ${(state as any).title}
 
-CURRENT PAGE:
-URL: ${url}
-TITLE: ${title}
-
-${context.pageContent ? `PAGE CONTENT:\n${this.truncate(context.pageContent, 6000)}` : ''}
-
-${context.previousPageState?.interactiveElements ? 
-  `Interactive elements detected on page:\n${context.previousPageState.interactiveElements.map((el: any) => `- ${el}`).join('\n')}` : 
-  ''}
-
-${context.successfulActions && context.successfulActions.length > 0 
-  ? `SUCCESSFUL ACTIONS ON THIS SITE:\n${context.successfulActions.slice(-3).join('\n')}`
-  : ''}
-
-${context.recognizedMilestones && context.recognizedMilestones.length > 0
-  ? `🏆 Milestones achieved: ${context.recognizedMilestones.join(', ')}`
-  : ''}
-
-AVAILABLE ACTIONS:
-- Click: { "type": "click", "element": "selector", "description": "description" }
-- Input: { "type": "input", "element": "selector", "value": "text" }
-- Navigate: { "type": "navigate", "value": "url" }
-- Wait: { "type": "wait", "maxWait": milliseconds }
-- AskHuman: { "type": "askHuman", "question": "This is your direct line to the human end of this system. Want human to pass a bot check for you? Confused? Saying hi? Succeeded & reporting back? This is the thing to use." }
-
+PAGE CONTENT:\n ${context.pageContent}
+---
+---
 TASK HISTORY:
 ${context.compressedHistory ? context.compressedHistory.slice(-5).join('\n') : 
   context.history ? context.history.slice(-5).join('\n') : 'No previous actions.'}
+---
+`;
+      prompt = prompt.replace(/[\t ]{2,}/g, ' ');
 
-Respond with a single JSON object for our next action.`;
-
-      logger.debug('Built Gemini prompt', {
-        promptLength: prompt.length,
-        hasPageContent: !!context.pageContent,
-        hasSuccessfulActions: context.successfulActions?.length ?? 0 > 0,
-        feedback: this.buildFeedbackSection(context)
-      });
+      logger.info('Built Gemini prompt:\n', prompt);
 
       const responseText = await this.processPrompt(prompt);
       
-      logger.debug('Extracting action from response', {
-        responseLength: responseText.length,
-        responsePreview: responseText.substring(0, 200)
-      });
-
+      logger.info('Received Gemini response:\n', responseText);
+      
       const extractor = new ActionExtractor();
       const action = await extractor.processRawAction(responseText);
       
-      logger.info('Action extraction completed', {
+      logger.debug('Action extraction completed', {
         success: !!action,
         action: action
       });

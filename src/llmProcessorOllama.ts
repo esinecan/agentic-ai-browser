@@ -18,7 +18,7 @@ const ollama = new ChatOllama({
 class OllamaProcessor implements LLMProcessor {
   private lastContext: number[] | null = null;
   private tokenCount: number = 0;
-  private readonly MAX_TOKENS = 3500; // Buffer below 4096 to be safe
+  private readonly MAX_TOKENS = 8000; 
   
   // Helper function to build feedback section
   private buildFeedbackSection(context: GraphContext): string {
@@ -64,8 +64,8 @@ class OllamaProcessor implements LLMProcessor {
     const estimatedPromptTokens = Math.ceil(prompt.length / 4);
     this.tokenCount += estimatedPromptTokens;
     
-    // Check if we need to reset context
-    if (this.tokenCount > this.MAX_TOKENS) {
+    // TODO: Implement token limit handling
+    if (this.tokenCount > this.MAX_TOKENS && false) {
       logger.info("Token limit reached, resetting context", {
         currentTokens: this.tokenCount,
         limit: this.MAX_TOKENS
@@ -138,9 +138,7 @@ class OllamaProcessor implements LLMProcessor {
   
   async generateNextAction(state: object, context: GraphContext): Promise<GraphContext["action"] | null> {
     // Ensure context.pageContent is set from state if undefined
-    if (!context.pageContent && (state as any).pageContent) {
-      context.pageContent = (state as any).pageContent;
-    }
+    context.pageContent = (state as any).pageContent;
     
     try {
       logger.info('Generating next action', {
@@ -170,10 +168,7 @@ ${context.userGoal ? `YOUR CURRENT TASK: ${context.userGoal}` : 'This is what th
 ${this.buildFeedbackSection(context)}
 ---
 THIS IS THE SIMPLIFIED HTML CONTENT OF THE PAGE, IN LIEU OF YOU "SEEING" THE PAGE:
-URL: ${(state as any).url}
-TITLE: ${(state as any).title}
-
-${context.pageContent ? `PAGE CONTENT:\n${this.truncate(context.pageContent, 2000)}` : 'PAGE CONTENT: [empty]'}
+\n ${context.pageContent}
 ---
 THESE ARE ACTIONS AVAILABLE TO YOU:
 - Click: { "type": "click", "element": "selector", "description": "description" }
@@ -203,7 +198,7 @@ Respond with a single JSON object for our next action, based on the available ac
       const extractor = new ActionExtractor();
       const action = await extractor.processRawAction(responseText);
       
-      logger.info('Action extraction completed', {
+      logger.debug('Action extraction completed', {
         success: !!action,
         action: action,
         responseLength: responseText.length

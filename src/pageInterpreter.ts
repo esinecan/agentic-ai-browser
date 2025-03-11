@@ -7,16 +7,23 @@ import { Page } from 'playwright';
  */
 export async function generatePageSummary(page: Page, domSnapshot: any): Promise<string> {
   const htmlContent = await page.content();
-  const $: cheerio.CheerioAPI = cheerio.load(htmlContent);
+  const $ = cheerio.load(htmlContent);
 
-  $('script, style, svg, noscript').remove();
+  // Remove irrelevant elements.
+  $('script, style, svg, noscript, iframe, meta, link').remove();
 
   let summary = '';
 
-  // Page metadata
-  summary += `PAGE TITLE: ${domSnapshot.title || 'No title'}\n\n`;
+  // Page metadata.
+  const title = $('title').text().trim() || domSnapshot.title || 'No title';
+  const metaDescription = $('meta[name="description"]').attr('content')?.trim() || '';
+  summary += `PAGE TITLE: ${title}\n`;
+  if (metaDescription) {
+    summary += `META DESCRIPTION: ${metaDescription}\n`;
+  }
+  summary += '\n';
 
-  // Major content sections from landmarks
+  // Major content sections from landmarks.
   if (domSnapshot.landmarks?.length) {
     summary += "MAIN CONTENT AREAS:\n";
     domSnapshot.landmarks.forEach((landmark: any) => {
@@ -28,36 +35,33 @@ export async function generatePageSummary(page: Page, domSnapshot: any): Promise
     summary += "\n";
   }
 
-  // Headings
-  if (domSnapshot.headings?.length) {
-    summary += "HEADINGS:\n";
-    domSnapshot.headings.forEach((heading: any) => {
-      const cleanHeadingText = heading.text.replace(/\s+/g, ' ').trim();
-      summary += `${heading.tag.toUpperCase()}: ${cleanHeadingText}\n`;
-    });
-    summary += "\n";
-  }
+   // Extract a snippet of body text.
+   const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
+   summary += `PAGE CONTENT:\n${bodyText.substring(0, 5000)}${bodyText.length > 5000 ? '...' : ''}\n`;
 
-  // Interactive elements (buttons, links, inputs)
+  // Interactive elements.
   summary += "INTERACTIVE ELEMENTS:\n";
-
-  $('a, button, input, select, textarea').each((_: number, elem: Element) => {
-    const tag = elem.tagName.toLowerCase();
-    const id = $(elem).attr('id');
-    const classes = $(elem).attr('class');
-    const text = ($(elem).text().trim() || $(elem).attr('placeholder') || '').replace(/\s+/g, ' ').trim();
+  $('a, button, input, select, textarea').each((_, el) => {
+    const element = el as Element;
+    const tag = element.tagName ? element.tagName.toLowerCase() : 'unknown';
+    const id = $(el).attr('id');
+    const classes = $(el).attr('class');
+    const href = $(el).attr('href');
+    const text = (($(el).text().trim() || $(el).attr('placeholder') || '').replace(/\s+/g, ' ')).trim();
   
-    let selector = tag;
-    if (id) selector = `#${id}`;
-    else if (classes) selector = `${tag}.${classes.split(' ').join('.')}`;
-  
-    summary += `- ${tag.toUpperCase()}: selector="${selector}", text="${text}"\n`;
+    if(text && text.length > 0) {
+      let selector = tag;
+      if (id) {
+        selector = `#${id}`;
+      } else if (classes) {
+        selector = `${tag}.${classes.split(' ').join('.')}`;
+      } else if (href) {
+        selector = `${tag}.${href}`;
+      }
+    
+      summary += `- ${tag.toUpperCase()}: selector="${selector}", text="${text}"\n`;
+    }
   });
-  
-
-  // Extract clean text
-  const meaningfulText = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 1000);
-  summary += `\nPAGE CONTENT:\n${meaningfulText}${meaningfulText.length >= 1000 ? '...' : ''}`;
-
+  summary += "\n";
   return summary;
 }
