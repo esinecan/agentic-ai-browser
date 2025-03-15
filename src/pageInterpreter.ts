@@ -42,7 +42,7 @@ export async function generatePageSummary(page: Page, domSnapshot: any): Promise
 
   // Interactive elements.
   summary += "INTERACTIVE ELEMENTS:\n";
-  $('a, button, input, select, textarea').each((_, el) => {
+  $('button, input, select, textarea, a').each((_, el) => {
     const element = el as Element;
     const tag = element.tagName ? element.tagName.toLowerCase() : 'unknown';
     const id = $(el).attr('id');

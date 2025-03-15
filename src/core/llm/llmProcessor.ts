@@ -1,4 +1,4 @@
-import { GraphContext } from "./browserExecutor.js";
+import { GraphContext } from "../../browserExecutor.js";
 
 export interface LLMProcessor {
     /**

@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
-import { BaseLLMProcessor, ConversationMessage } from "./core/llm/BaseLLMProcessor.js";
-import logger from './utils/logger.js';
+import { BaseLLMProcessor, ConversationMessage } from "./BaseLLMProcessor.js";
+import logger from '../../utils/logger.js';
 
 dotenv.config();
 
@@ -8,23 +8,7 @@ dotenv.config();
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://host.docker.internal:11434';
 const MODEL = process.env.LLM_MODEL || "phi4-mini";
 
-const SYSTEM_PROMPT = `
-### You are an automation agent controlling a web browser.
-### Your only goal is to execute web automation tasks precisely.
-### You can return ONLY ONE of the 5 valid action types per response:
-
-- Click: { "type": "click", "element": "selector", "description": "description" }
-- Input: { "type": "input", "element": "selector", "value": "text" }
-- Navigate: { "type": "navigate", "value": "url" }
-- Wait: { "type": "wait", "maxWait": milliseconds }
-- SendHumanMessage: { "type": "sendHumanMessage", "question": "This is how you communicate with human user." }
-
----
-# EXAMPLES:
-1. If asked to navigate: { "type": "navigate", "value": "https://example.com" }
-2. If asked to click: { "type": "click", "element": "#submit-button" }
-3. If asked to summarize, use sendHumanMessage: { "type": "sendHumanMessage", "question": "Hello I am AI assistant. What are you up to you fithy flesh monkey you?" }
-`;
+// System prompt is now defined in BaseLLMProcessor
 
 const RESPONSE_FORMAT = {
   type: "json_schema",
@@ -62,9 +46,7 @@ const RESPONSE_FORMAT = {
 };
 
 class OllamaProcessor extends BaseLLMProcessor {
-  protected getSystemPrompt(): string {
-    return SYSTEM_PROMPT;
-  }
+  // No need to override getSystemPrompt() - using the base class implementation
   
   protected async processPrompt(prompt: string, systemPrompt: string): Promise<string> {
     // Build the payload for Ollama API
@@ -125,7 +107,7 @@ class OllamaProcessor extends BaseLLMProcessor {
       
       return responseText;
     } catch (error) {
-      logger.error('Ollama LLM Error: ', error);
+      logger.error(' LLM Error: ', error);
       return "Error communicating with Ollama API";
     }
   }

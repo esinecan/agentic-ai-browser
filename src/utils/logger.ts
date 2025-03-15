@@ -91,28 +91,6 @@ export const logger = {
     log('INFO', `State Transition: ${state}`, data);
   },
   
-  // Log LLM interactions
-  llm: {
-    request: (provider: string, data: any) => {
-      log('DEBUG', `${provider} Request`, {
-        timestamp: new Date().toISOString(),
-        ...data
-      });
-    },
-    response: (provider: string, data: any) => {
-      log('DEBUG', `${provider} Response`, {
-        timestamp: new Date().toISOString(),
-        ...data
-      });
-    },
-    error: (provider: string, error: any) => {
-      log('ERROR', `${provider} Error`, {
-        timestamp: new Date().toISOString(),
-        error
-      });
-    }
-  },
-  
   // Log browser actions
   browser: {
     action: (type: string, data: any) => {
@@ -122,7 +100,7 @@ export const logger = {
       log('ERROR', `Browser Error: ${type}`, error);
     }
   },
-  
+
   // Configuration methods
   setLevel: (level: LogLevel) => {
     currentLogLevel = LOG_LEVELS[level];
