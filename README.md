@@ -1,3 +1,6 @@
+Here's a modified version of the README.md with containerization references removed:
+
+```markdown
 ## Overview
 This project is a **sophisticated (also pretty darn cool), AI-driven web automation agent** that uses **Playwright** for browser interactions and **LLM integration** for intelligent decision-making. It's designed for **reliable, adaptable web automation** with robust element detection and contextual understanding.
 
@@ -7,11 +10,10 @@ This project is a **sophisticated (also pretty darn cool), AI-driven web automat
 - **Adaptive Element Detection** – Handles different UI patterns across websites automatically
 - **Action Verification & Recovery** – Ensures actions succeed with smart fallbacks and alternative selectors
 - **Context-Aware Interaction** – Maintains task history and adapts based on successes and failures
-- **Fully Containerized** – Supports **Docker & Docker Compose** for easy deployment
 - **Multi-LLM Support** – Works with both **Gemini** and **Ollama** models for flexibility
 - **Improved Resilience** – Enhanced retry logic with increased attempt limits
 - **Agent State Management** – Track and control agent execution state
-- **Manual Intervention** – Ask for human help when the agent is stuck
+- **Manual Intervention** – Request human help when the agent is stuck
 
 ---
 
@@ -20,7 +22,6 @@ This project is a **sophisticated (also pretty darn cool), AI-driven web automat
 ### 1️⃣ Prerequisites
 Ensure you have the following installed:
 - [Node.js 18+](https://nodejs.org/)
-- [Docker](https://www.docker.com/) (optional)
 
 ### 2️⃣ Clone the Repository
 ```sh
@@ -38,6 +39,7 @@ SCREENSHOT_DIR=./screenshots
 LLM_PROVIDER=gemini  # or ollama
 GEMINI_API_KEY=your-key-here  # if using Gemini
 OLLAMA_BASE_URL=http://localhost:11434  # if using Ollama
+LLM_MODEL=gemini-2.0-flash  # or any other model
 ```
 
 ### 4️⃣ Install Dependencies
@@ -56,24 +58,12 @@ npm run build
 npm start
 ```
 
-### 7️⃣ Run in Docker
-```sh
-docker build -t agentic-ai-browser .
-docker run --rm -it agentic-ai-browser
-```
-
-### 8️⃣ Run with Docker Compose
-```sh
-docker-compose up --build -d
-```
-
 ---
 
 ## Project Structure
-- Dockerfile: Defines the Docker image for the agent
-- docker-compose.yml: Defines the Docker services for the project
 - package.json: Contains the project dependencies
 - tsconfig.json: TypeScript configuration file
+- jest.config.js: Jest testing configuration
 - src: Contains the source code for the agent
   - automation.ts: Core automation logic and execution flow
   - `browserExecutor.ts`: Executes browser actions using Playwright
@@ -81,10 +71,11 @@ docker-compose up --build -d
   - `successPatterns.ts`: Tracks successful interaction patterns
   - `index.ts`: Entry point for the application
   - `llmProcessor.ts`: Abstraction layer for LLM integration
-  - llmProcessorGemini.ts: Gemini-specific implementation (using gemini-2.0-flash)
+  - llmProcessorGemini.ts: Gemini-specific implementation
   - `llmProcessorOllama.ts`: Ollama-specific implementation
   - `actionExtractor.ts`: Handles normalization and extraction of actions
   - `utils/agentState.js`: Manages the state of the automation agent
+  - `__tests__/`: Unit tests for core components
 - data: Contains reference data like success patterns
 - logs: Stores execution logs with timestamps
 - screenshots: Stores screenshots taken during automation
