@@ -1,21 +1,70 @@
 import dotenv from "dotenv";
 dotenv.config();
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, Schema, SchemaType } from "@google/generative-ai";
 import { GraphContext } from "./browserExecutor.js";
 import { ActionExtractor } from "./core/action-handling/ActionExtractor.js";
 import { LLMProcessor } from "./llmProcessor.js";
 import logger from './utils/logger.js';
 
+// Using the same system prompt as Ollama processor
+const SYSTEM_PROMPT = `
+### You are an automation agent controlling a web browser.
+### Your only goal is to execute web automation tasks precisely.
+### You can return ONLY ONE of the 5 valid action types per response:
+
+- Click: { "type": "click", "element": "selector", "description": "description" }
+- Input: { "type": "input", "element": "selector", "value": "text" }
+- Navigate: { "type": "navigate", "value": "url" }
+- Wait: { "type": "wait", "maxWait": milliseconds }
+- SendHumanMessage: { "type": "sendHumanMessage", "question": "This is how you communicate with human user." }
+
+---
+# EXAMPLES:
+1. If asked to navigate: { "type": "navigate", "value": "https://example.com" }
+2. If asked to click: { "type": "click", "element": "#submit-button" }
+3. If asked to summarize, use sendHumanMessage: { "type": "sendHumanMessage", "question": "Hello I am AI assistant. What are you up to you fithy flesh monkey you?" }
+`;
+
+// Define JSON schema for responses - similar to Ollama's RESPONSE_FORMAT
+const RESPONSE_SCHEMA = {
+  description: "Action to perform in the browser",
+  type: SchemaType.OBJECT,
+  properties: {
+    type: {
+      type: SchemaType.STRING,
+      description: "The type of action to be performed.",
+      enum: ["click", "input", "navigate", "wait", "sendHumanMessage"]
+    },
+    element: {
+      type: SchemaType.STRING,
+      description: "The CSS selector of the element to interact with (if applicable)."
+    },
+    value: {
+      type: SchemaType.STRING,
+      description: "The input value for the action (if applicable)."
+    },
+    description: {
+      type: SchemaType.STRING,
+      description: "A brief description of the action being performed."
+    },
+    question: {
+      type: SchemaType.STRING,
+      description: "The question to ask the human user (only for sendHumanMessage action)."
+    },
+    maxWait: {
+      type: SchemaType.NUMBER,
+      description: "The maximum time to wait in milliseconds (only for wait action)."
+    }
+  },
+  required: ["type"]
+};
+
 interface GeminiConfig {
   modelName: string;
-  maxOutputTokens: number;
-  temperature: number;
 }
 
 const defaultConfig: GeminiConfig = {
-  modelName: "gemini-2.0-flash-lite",
-  maxOutputTokens: 18000,
-  temperature: 0.7,
+  modelName: process.env.LLM_MODEL || "gemini-2.0-flash-lite",
 };
 
 const apiKey = process.env.GEMINI_API_KEY;
@@ -25,54 +74,36 @@ if (!apiKey) {
   throw new Error("GEMINI_API_KEY is not defined. Please set it in the environment variables.");
 }
 
+// Message type similar to Ollama for consistency
+type ConversationMessage = {
+  role: string;
+  parts: { text: string }[];
+};
+
 class GeminiProcessor implements LLMProcessor {
   private genAI: GoogleGenerativeAI;
   private model: any;
-  private tokenCount: number = 0;
-  private readonly MAX_TOKENS = 30000;
-  private lastResponse: any = null;
   private config: GeminiConfig;
+  // Store conversation history similar to Ollama
+  private lastContext: ConversationMessage[] = [];
 
   constructor(config: Partial<GeminiConfig> = {}) {
     this.config = { ...defaultConfig, ...config };
-    // We can safely assert apiKey is string here since we checked above
     this.genAI = new GoogleGenerativeAI(apiKey as string);
     this.model = this.genAI.getGenerativeModel({
       model: this.config.modelName,
+      systemInstruction: SYSTEM_PROMPT,
       generationConfig: {
-        maxOutputTokens: this.config.maxOutputTokens,
-        temperature: this.config.temperature,
-      },
-      systemInstruction: `
-### You are an automation agent controlling a web browser.
-### Your only goal is to execute web automation tasks precisely.
-### You can return ONLY ONE of the 5 valid action types per response:
-
-- Click: { "type": "click", "element": "selector", "description": "description" }
-- Input: { "type": "input", "element": "selector", "value": "text" }
-- Navigate: { "type": "navigate", "value": "url" }
-- Wait: { "type": "wait", "maxWait": milliseconds }
-- AskHuman: { "type": "askHuman", "question": "This is how you communicate with human user." }
-
----
-# EXAMPLES:
-1. If asked to navigate: { "type": "navigate", "value": "https://example.com" }
-2. If asked to click: { "type": "click", "element": "#submit-button" }
-3. If asked to summarize, use askHuman: { "type": "askHuman", "question": "The summary you asked for: lorem ipsum dolor sit am...." }
-`
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA as Schema
+      }
     });
-
-    if(process.env.LLM_PROVIDER === 'gemini') {
-      logger.info('Gemini processor initialized', {
-        modelName: this.config.modelName,
-        maxOutputTokens: this.config.maxOutputTokens,
-        temperature: this.config.temperature
-      });
-    }
   }
 
-  private logPromptContext(context: Record<string, any>) {
-    logger.debug("GEMINI CONTEXT", context);
+  // Sanitizes a user message by removing the PAGE CONTENT block, same as Ollama
+  private sanitizeUserMessage(message: string): string {
+    // Remove from "PAGE CONTENT:" up to the next separator (a line that starts with ---)
+    return message.replace(/PAGE CONTENT:\s*[\s\S]*?(?=\n---)/, '').trim();
   }
 
   private buildFeedbackSection(context: GraphContext): string {
@@ -86,65 +117,33 @@ class GeminiProcessor implements LLMProcessor {
     return '';
   }
 
-  private truncate(text: string | undefined, maxLength: number): string {
-    if (!text || text.length <= maxLength) return text || '';
-    return text.substring(0, maxLength) + '...[content truncated]';
-  }
-
   private async processPrompt(prompt: string): Promise<string> {
-    logger.llm.request('Gemini', {
-      modelInfo: {
-        model: this.config.modelName,
-        contextSize: this.lastResponse ? 'Using previous context' : 'New context',
-        tokenCount: this.tokenCount,
-        maxTokens: this.MAX_TOKENS
-      },
-      promptAnalysis: {
-        goal: prompt.match(/TASK: (.*?)\n/)?.[1],
-        url: prompt.match(/URL: (.*?)\n/)?.[1],
-        title: prompt.match(/TITLE: (.*?)\n/)?.[1],
-        feedback: prompt.match(/FEEDBACK: (.*?)\n/)?.[1],
-        historyEntries: prompt.match(/TASK HISTORY:\n([\s\S]*?)$/)?.[1]?.split('\n').length || 0
-      }
-    });
-
-    const estimatedPromptTokens = Math.ceil(prompt.length / 4);
-    this.tokenCount += estimatedPromptTokens;
-    
-    if (this.tokenCount > this.MAX_TOKENS) {
-      logger.info('Token limit reached, resetting context', {
-        currentTokens: this.tokenCount,
-        limit: this.MAX_TOKENS
-      });
-      this.lastResponse = null;
-      this.tokenCount = estimatedPromptTokens;
-    }
-
     try {
-      const history = this.lastResponse ? [this.lastResponse] : [];
+      // Structure the contents with system prompt and conversation history
+      logger.info('Gemini prompt: \n' + prompt + '\n' );
       const result = await this.model.generateContent({
-        contents: [...history, { role: "user", parts: [{ text: prompt }] }],
+        contents: [
+          ...this.lastContext,
+          { role: "user", parts: [{ text: prompt }] }
+        ],
       });
 
       const responseText = result.response.text();
       
-      logger.llm.response('Gemini', {
-        responseLength: responseText.length,
-        content: responseText,
-        hasContext: !!this.lastResponse,
-        contextUpdated: true
-      });
+      logger.info('Gemini response: \n' + responseText + '\n' );
 
-      this.lastResponse = { role: "model", parts: [{ text: responseText }] };
+      // Update conversation context with sanitized user message and model response
+      this.lastContext.push({ role: "user", parts: [{ text: this.sanitizeUserMessage(prompt) }] });
+      this.lastContext.push({ role: "model", parts: [{ text: responseText }] });
+      
+      // If history gets too long, trim it to keep the most recent exchanges
+      if (this.lastContext.length > 10) {
+        this.lastContext = this.lastContext.slice(-10);
+      }
+
       return responseText;
     } catch (error) {
-      logger.llm.error('Gemini', {
-        error,
-        lastResponseSize: this.lastResponse?.parts[0]?.text?.length,
-        tokenCount: this.tokenCount
-      });
-      this.lastResponse = null;
-      this.tokenCount = 0;
+      logger.llm.error('Gemini', error);
       return "Error communicating with Gemini API";
     }
   }
@@ -182,7 +181,8 @@ THIS IS THE SIMPLIFIED HTML CONTENT OF THE PAGE, IN LIEU OF YOU "SEEING" THE PAG
 URL: ${(state as any).url}
 TITLE: ${(state as any).title}
 
-PAGE CONTENT:\n ${context.pageContent}
+PAGE CONTENT:
+${context.pageContent}
 ---
 ---
 TASK HISTORY:
@@ -192,18 +192,22 @@ ${context.compressedHistory ? context.compressedHistory.slice(-5).join('\n') :
 `;
       prompt = prompt.replace(/[\t ]{2,}/g, ' ');
 
-      logger.info('Built Gemini prompt:\n', prompt);
+      logger.debug('Built Gemini prompt', {
+        promptLength: prompt.length,
+        hasPageContent: !!context.pageContent,
+        hasSuccessfulActions: (context.successfulActions?.length ?? 0) > 0,
+        feedback: this.buildFeedbackSection(context)
+      });
 
       const responseText = await this.processPrompt(prompt);
-      
-      logger.info('Received Gemini response:\n', responseText);
       
       const extractor = new ActionExtractor();
       const action = await extractor.processRawAction(responseText);
       
       logger.debug('Action extraction completed', {
         success: !!action,
-        action: action
+        action: action,
+        responseLength: responseText.length
       });
 
       if (!action) throw new Error("Failed to extract action from response");
@@ -217,7 +221,8 @@ ${context.compressedHistory ? context.compressedHistory.slice(-5).join('\n') :
         },
         context: {
           userGoal: context.userGoal,
-          lastAction: context.action
+          lastAction: context.action,
+          retries: context.retries
         }
       });
       return null;

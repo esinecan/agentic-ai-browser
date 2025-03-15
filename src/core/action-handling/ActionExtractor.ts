@@ -1,5 +1,5 @@
 // src/core/action-handling/ActionExtractor.ts
-
+import cssesc from 'cssesc';
 import { Action, AgentContext } from '../shared/types.js';
 import { ActionValidator } from './ActionValidator.js';
 import { ElementVerifier } from './ElementVerifier.js';
@@ -31,31 +31,53 @@ export class ActionExtractor {
   }
 
   processRawAction(rawText: string): Action | null {
+    // Handle empty input explicitly before attempting parsing
+    if (!rawText || rawText.trim().length === 0) {
+      return null;
+    }
+    
     try {
-      const extractors = [
-        this.extractFromJson,
-        this.extractFromKeyValuePairs,
-        this.extractFromLoosePatterns,
-        this.parseDeferToHuman
-      ];
+      // First try direct JSON parsing
+      const action: Action = JSON.parse(rawText);
 
-      for (const extractor of extractors) {
-        logger.debug(`Attempting extraction with ${extractor.name}`);
-        const result = extractor.call(this, rawText);
-
-        if (result) {
-          const normalized = this.normalizeActionObject(result);
-          if (normalized) {
-            logger.info(`Action extracted successfully using ${extractor.name}`, { method: extractor.name, result: normalized });
-            return normalized;
-          }
+      // Normalize click action: if no element is provided and value starts with "a."
+      if (action.type.toLowerCase() === 'click') {
+        if (!action.element && action.value && action.value.startsWith('a.')) {
+          // Strip off "a."
+          const rawUrl = action.value.substring(2).trim();
+          
+          // Build a CSS selector for the anchor 
+          // (Exact match or partial, your choice: change = to *= if you prefer "contains")
+          const safeHref = cssesc(rawUrl, { isIdentifier: false });
+          action.element = `a[href="${safeHref}"]`;
+          action.description = action.value;
+          delete action.value;
         }
       }
 
-      logger.warn("All extraction methods failed", { textPreview: rawText.substring(0, 300), attemptedMethods: extractors.map(e => e.name) });
-      return null;
+      return action;
     } catch (error) {
-      logger.error("Action extraction failed", error);
+      // If direct JSON parsing fails, try other extraction methods
+      logger.debug("JSON parsing failed, trying alternative extraction methods");
+      
+      // Try extracting JSON from text
+      const jsonAction = this.extractFromJson(rawText);
+      if (jsonAction) return jsonAction;
+      
+      // Try extracting from key-value pairs
+      const kvAction = this.extractFromKeyValuePairs(rawText);
+      if (kvAction) return kvAction;
+      
+      // Try extracting from loose patterns
+      const patternAction = this.extractFromLoosePatterns(rawText);
+      if (patternAction) return patternAction;
+      
+      // Check if we should defer to human
+      const deferAction = this.parseDeferToHuman(rawText);
+      if (deferAction) return deferAction;
+      
+      // Don't log errors during tests - only log at debug level
+      logger.debug("Failed to parse action from raw output: " + rawText + "\n", error);
       return null;
     }
   }
@@ -124,13 +146,13 @@ export class ActionExtractor {
 
   private extractFromLoosePatterns(text: string): Action | null {
     try {
-      const actionTypes = ["click", "input", "navigate", "scroll", "extract", "wait", "askHuman", "askhuman", "ask_human", "ask"];
+      const actionTypes = ["click", "input", "navigate", "scroll", "extract", "wait", "sendHumanMessage", "sendhumanmessage", "ask_human", "ask"];
       let actionType: string | null = null;
 
       for (const type of actionTypes) {
         const regex = new RegExp(`(\b|action|type)[\s:"']*${type}\b`, 'i');
         if (regex.test(text)) {
-          actionType = type === "askhuman" || type === "ask_human" || type === "ask" ? "askHuman" : type;
+          actionType = type === "sendhumanmessage" || type === "ask_human" || type === "ask" ? "sendHumanMessage" : type;
           break;
         }
       }
@@ -148,7 +170,7 @@ export class ActionExtractor {
       if (valueMatch) value = valueMatch[1].trim();
 
       let question: string | null = null;
-      if (actionType === "askHuman") {
+      if (actionType === "sendHumanMessage") {
         const questionMatch = text.match(/question[:\s]+["']?([^"'\n,}]+)["']?/i);
         question = questionMatch ? questionMatch[1].trim() : "What should I do next?";
       }
@@ -170,15 +192,15 @@ export class ActionExtractor {
 
     if (matchingIndicators.length > 0) {
       const question = text.length > 200 ? text.substring(0, 200) + "..." : text;
-      logger.debug("Converting to askHuman due to help indicators", { matchedPhrases: matchingIndicators, questionPreview: question });
+      logger.debug("Converting to sendHumanMessage due to help indicators", { matchedPhrases: matchingIndicators, questionPreview: question });
 
-      return { type: 'askHuman', question, selectorType: 'css', maxWait: 5000 };
+      return { type: 'sendHumanMessage', question, selectorType: 'css', maxWait: 5000 };
     }
     return null;
   }
   private normalizeActionObject(obj: any): Action {
       return {
-          type: obj.type as "input" | "navigate" | "click" | "wait" | "askHuman",
+          type: obj.type as "input" | "navigate" | "click" | "wait" | "sendHumanMessage",
           selector: obj.selector,
           value: obj.value,
           description: obj.description,

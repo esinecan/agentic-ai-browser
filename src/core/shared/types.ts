@@ -8,7 +8,7 @@ export interface BrowserState {
 }
 
 export interface Action {
-  type: "input" | "navigate" | "click" | "wait" | "askHuman";
+  type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage";
   selector?: string;
   element?: string;
   value?: string;

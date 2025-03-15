@@ -1,8 +1,6 @@
-import { launchBrowser, createPage, getPageState, verifyAction, GraphContext, compressHistory, verifyElementExists } from "./browserExecutor.js";
+import { launchBrowser, createPage, getPageState, verifyAction, GraphContext, compressHistory, verifyElementExists, Action } from "./browserExecutor.js";
 import { ollamaProcessor } from "./llmProcessorOllama.js";
 import { geminiProcessor } from "./llmProcessorGemini.js";
-import { Page } from 'playwright';
-import { Action } from './browserExecutor.js';
 import { LLMProcessor } from './llmProcessor.js';
 import readline from 'readline';
 import fs from 'fs';
@@ -275,8 +273,8 @@ interface PageState {
   domSnapshot: any;
 }
 
-// Extract the askHuman handler to a standalone function
-async function askHumanHandler(ctx: GraphContext): Promise<string> {
+// Extract the sendHumanMessage handler to a standalone function
+async function sendHumanMessageHandler(ctx: GraphContext): Promise<string> {
   if (!ctx.page || !ctx.action) throw new Error("Invalid context");
   
   try {
@@ -462,9 +460,9 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
     
     // Smart triggering for human help
     if (ctx.retries && ctx.retries >= 2) {
-      const shouldAskHuman = Math.random() < 0.7;
+      const shouldSendHumanMessage = Math.random() < 0.7;
       
-      if (shouldAskHuman) {
+      if (shouldSendHumanMessage) {
         const failedActionType = ctx.actionHistory?.[ctx.actionHistory.length - 1]?.type || 'action';
         
         logger.info('Switching to human help', {
@@ -473,13 +471,13 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
         });
         
         ctx.action = {
-          type: 'askHuman',
+          type: 'sendHumanMessage',
           question: `I've tried ${ctx.retries} times to ${failedActionType} but keep failing. The page title is "${await ctx.page.title()}". What should I try next?`,
           selectorType: 'css',
           maxWait: 5000
         };
         
-        return "askHuman";
+        return "sendHumanMessage";
       }
     }
 
@@ -495,12 +493,12 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
         return "wait";
       } else {
         ctx.action = {
-          type: 'askHuman',
+          type: 'sendHumanMessage',
           question: `I seem to be stuck in a loop of waiting. The page title is "${await ctx.page.title()}". What should I try next?`,
           selectorType: 'css',
           maxWait: 5000
         };
-        return "askHuman";
+        return "sendHumanMessage";
       }
     }
 
@@ -518,7 +516,7 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
     ctx.actionHistory.push(action);
 
     // Verify element existence
-    if (action.element && ['click', 'input'].includes(action.type.toLowerCase())) {
+    if (action.element && ['input'].includes(action.type.toLowerCase())) {
       try {
         logger.browser.action('elementCheck', {
           element: action.element,
@@ -556,61 +554,69 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
   },
 
   // Use the extracted function for both cases
-  askHuman: askHumanHandler,
-  askhuman: askHumanHandler, // This is now valid since we're using a pre-defined function
+  sendHumanMessage: sendHumanMessageHandler,
+  sendhumanmessage: sendHumanMessageHandler, // This is now valid since we're using a pre-defined function
   
   click: async (ctx: GraphContext) => {
-    if (!ctx.page || !ctx.action) throw new Error("Invalid context");
-    
+    if (!ctx.page || !ctx.action) {
+      throw new Error("Invalid context");
+    }
+  
     logger.browser.action('click', {
       element: ctx.action.element,
       url: ctx.page.url()
     });
-    
+  
     try {
       const { getElement } = await import("./browserExecutor.js");
       const elementHandle = await getElement(ctx.page, ctx.action);
-      if (!elementHandle) throw new Error("Element not found");
-      
+  
+      if (!elementHandle) {
+        throw new Error("Element not found " + elementHandle);
+      }
+  
+      // Try the click
       await elementHandle.click({ timeout: ctx.action.maxWait });
       const verified = await verifyAction(ctx.page, ctx.action);
-      
+  
       if (!verified) {
-        throw new Error("Action verification failed after click");
+        throw new Error("Action verification failed after click" + elementHandle);
       }
-
+  
+      // If we get here, the click was successful
       ctx.lastActionSuccess = true;
       ctx.successCount = (ctx.successCount || 0) + 1;
-      
+      ctx.successfulActions?.push(`click:${ctx.action.element}`);
+  
       const elementSelector = ctx.action.element;
       const description = ctx.action.description || elementSelector;
-      ctx.successfulActions?.push(`click:${elementSelector}`);
-
+  
       logger.info('Click successful', {
         element: description,
         successCount: ctx.successCount
       });
-
+  
+      // Optionally record success patterns
       try {
         const domain = new URL(ctx.page.url()).hostname;
         const successPatternsInstance = new SuccessPatterns();
         successPatternsInstance.recordSuccess(ctx.action, domain);
-      } catch (error) {
-        logger.error('Error recording success pattern', error);
+      } catch (spError) {
+        logger.error('Error recording success pattern', spError);
       }
-
+  
       return "getPageState";
     } catch (error) {
       logger.browser.error('click', {
         error,
         element: ctx.action.element
       });
-      
       ctx.lastActionSuccess = false;
       ctx.successCount = 0;
       return "handleFailure";
     }
   },
+  
   input: async (ctx: GraphContext) => {
     if (!ctx.page || !ctx.action) throw new Error("Invalid context");
 
@@ -884,7 +890,8 @@ async function runStateMachine(ctx: GraphContext): Promise<void> {
 // Exported function to run the entire automation graph.
 export async function runGraph(): Promise<void> {
   // Prompt the user for their automation goal
-  const userGoal = await promptUser("Please enter your goal for this automation: ");
+  //const userGoal = await promptUser("Please enter your goal for this automation: ");
+  const userGoal = "go to https://duckduckgo.com/ and search the word 'marco-o1 github' via the search bar --> Find its link --> Click on it --> Tell me what it's about via sendHumanMessage action once you understand the page content.";
   
   // Initialize context with user goal and history
   const ctx: GraphContext = { 

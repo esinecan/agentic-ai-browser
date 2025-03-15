@@ -1,4 +1,3 @@
-import { ChatOllama } from '@langchain/ollama';
 import dotenv from 'dotenv';
 import { LLMProcessor } from "./llmProcessor.js";
 import { GraphContext } from "./browserExecutor.js";
@@ -7,20 +6,72 @@ import logger from './utils/logger.js';
 
 dotenv.config();
 
-// Use host.docker.internal to access the host from Docker container
+// Use host.docker.
+// internal to access the host from Docker container
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://host.docker.internal:11434';
+const SYSTEM_PROMPT = `
+### You are an automation agent controlling a web browser.
+### Your only goal is to execute web automation tasks precisely.
+### You can return ONLY ONE of the 5 valid action types per response:
 
-const ollama = new ChatOllama({
-  baseUrl: OLLAMA_HOST,
-  model: "phi4-mini"
-});
+- Click: { "type": "click", "element": "selector", "description": "description" }
+- Input: { "type": "input", "element": "selector", "value": "text" }
+- Navigate: { "type": "navigate", "value": "url" }
+- Wait: { "type": "wait", "maxWait": milliseconds }
+- SendHumanMessage: { "type": "sendHumanMessage", "question": "This is how you communicate with human user." }
+
+---
+# EXAMPLES:
+1. If asked to navigate: { "type": "navigate", "value": "https://example.com" }
+2. If asked to click: { "type": "click", "element": "#submit-button" }
+3. If asked to summarize, use sendHumanMessage: { "type": "sendHumanMessage", "question": "The summary you asked for: lorem ipsum dolor sit am...." }
+`;
+
+const RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "action_response",
+    strict: true,
+    schema: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          enum: ["click", "input", "navigate", "wait", "sendHumanMessage"],
+          description: "The type of action to be performed."
+        },
+        element: {
+          type: "string",
+          description: "The CSS selector of the element to interact with (if applicable).",
+          nullable: true
+        },
+        value: {
+          type: "string",
+          description: "The input value for the action (if applicable).",
+          nullable: true
+        },
+        description: {
+          type: "string",
+          description: "A brief description of the action being performed.",
+          nullable: true
+        }
+      },
+      required: ["type"],
+      additionalProperties: false
+    }
+  }
+};
+
+type ConversationMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
 
 class OllamaProcessor implements LLMProcessor {
-  private lastContext: number[] | null = null;
-  private tokenCount: number = 0;
-  private readonly MAX_TOKENS = 8000; 
+  // Now using an array of conversation messages to track full context.
+  private lastContext: ConversationMessage[] = [];
   
-  // Helper function to build feedback section
+  // Helper function to build the feedback section based on current context.
   private buildFeedbackSection(context: GraphContext): string {
     if (context.actionFeedback) {
       return `FEEDBACK: ${context.actionFeedback}`;
@@ -32,98 +83,59 @@ class OllamaProcessor implements LLMProcessor {
     return '';
   }
 
-  // Helper function to truncate text (modified)
-  private truncate(text: string | undefined, maxLength: number): string {
-    if (!text) return '';
-    // Collapse extra whitespace and trim
-    const trimmed = text.trim().replace(/\s+/g, ' ');
-    return trimmed.length <= maxLength ? trimmed : trimmed.substring(0, maxLength) + '...[truncated]';
-  }
-  
-  private logPromptContext(context: Record<string, any>) {
-    logger.debug("OLLAMA CONTEXT", context);
+  // Sanitizes a user message by removing the PAGE CONTENT block.
+  private sanitizeUserMessage(message: string): string {
+    // Remove from "PAGE CONTENT:" up to the next separator (a line that starts with ---)
+    return message.replace(/PAGE CONTENT:\s*[\s\S]*?(?=\n---)/, '').trim();
   }
   
   async processPrompt(prompt: string): Promise<string> {
-    logger.llm.request('Ollama', {
-      modelInfo: {
-        model: process.env.OLLAMA_MODEL || "phi4-mini",
-        contextSize: this.lastContext?.length || 0,
-        tokenCount: this.tokenCount
-      },
-      promptAnalysis: {
-        goal: prompt.match(/TASK: (.*?)\n/)?.[1],
-        url: prompt.match(/URL: (.*?)\n/)?.[1],
-        title: prompt.match(/TITLE: (.*?)\n/)?.[1],
-        feedback: prompt.match(/FEEDBACK: (.*?)\n/)?.[1],
-        history: prompt.match(/TASK HISTORY:\n([\s\S]*?)$/)?.[1]?.split('\n')
-      }
-    });
-
-    // Estimate token count (rough approximation)
-    const estimatedPromptTokens = Math.ceil(prompt.length / 4);
-    this.tokenCount += estimatedPromptTokens;
-    
-    // TODO: Implement token limit handling
-    if (this.tokenCount > this.MAX_TOKENS && false) {
-      logger.info("Token limit reached, resetting context", {
-        currentTokens: this.tokenCount,
-        limit: this.MAX_TOKENS
-      });
-      this.lastContext = null;
-      this.tokenCount = estimatedPromptTokens;
-    }
-    
-    const options: any = {
-      model: process.env.OLLAMA_MODEL || "phi4-mini",
-      prompt: prompt,
-      stream: false,
-      options: {
-        num_ctx: 4096,
-        temperature: 0.7
-      }
+    // Build the payload messages: system prompt, previous conversation context, and the new user message.
+    const payload = {
+      model: process.env.LLM_MODEL || "phi4-mini",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        ...this.lastContext,
+        { role: "user", content: prompt }
+      ],
+      response_format: RESPONSE_FORMAT
     };
-    
-    // Include context from previous interaction if available
-    if (this.lastContext) {
-      options.context = this.lastContext;
-    }
-
+  
     try {
-      const result = await fetch(`${OLLAMA_HOST}/api/generate`, {
+      const result = await fetch(`${OLLAMA_HOST}/v1/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(options)
+        body: JSON.stringify(payload)
       });
 
-      logger.error('LLM request sent', {
+      logger.info('LLM request sent', {
         requestText: prompt,
       });
       
       const response = await result.json();
-
-      logger.error('LLM response received', {
-        responseText: response.response
-      });
       
-      
-      // Store context for next interaction
+      // Update conversation context. If the API returns a context array, sanitize any user messages.
       if (response.context) {
-        this.lastContext = response.context;
+        this.lastContext = response.context.map((msg: ConversationMessage) => {
+          if (msg.role === 'user') {
+            return { role: msg.role, content: this.sanitizeUserMessage(msg.content) };
+          }
+          return msg;
+        });
         logger.debug('Updated Ollama context', {
           contextLength: response.context.length
         });
+      } else {
+        if (response && Array.isArray(response.choices) && response.choices.length > 0 && response.choices[0].message && response.choices[0].message.content) {
+          response.response = response.choices[0].message.content;
+          logger.info('LLM response received', {
+            responseText: response.response
+          });
       }
-
-      logger.llm.response('Ollama', {
-        responseLength: response.response?.length,
-        content: response.response,
-        metrics: {
-          totalDuration: response.total_duration,
-          evalDuration: response.eval_duration,
-          evalCount: response.eval_count
-        }
-      });
+        // Fallback: update manually by pushing a sanitized version of the user prompt and the assistant response.
+        this.lastContext.push({ role: "user", content: this.sanitizeUserMessage(prompt) });
+        this.lastContext.push({ role: "assistant", content: response.response });
+      }
       
       return response.response || '';
     } catch (error) {
@@ -137,7 +149,7 @@ class OllamaProcessor implements LLMProcessor {
   }
   
   async generateNextAction(state: object, context: GraphContext): Promise<GraphContext["action"] | null> {
-    // Ensure context.pageContent is set from state if undefined
+    // Ensure that context.pageContent is set from state if it is undefined.
     context.pageContent = (state as any).pageContent;
     
     try {
@@ -156,40 +168,32 @@ class OllamaProcessor implements LLMProcessor {
         }
       });
 
-      let prompt = `Hi :)
-- You're talking to an automated system, that is supervised by a human. 
-- The reason this system is sitting between you is, to enable to use a web browser.
-- This middleware will be your eyes and hands on the web.
-- You can ask the system to click on elements, input text, navigate to a different page, wait for a certain amount of time, or ask for human help. 
-- The system will try to understand your request and perform the action on the web page.
+      let prompt = `
 ---
 ${context.userGoal ? `YOUR CURRENT TASK: ${context.userGoal}` : 'This is what the browser is currently displaying.'}
 ---
 ${this.buildFeedbackSection(context)}
 ---
 THIS IS THE SIMPLIFIED HTML CONTENT OF THE PAGE, IN LIEU OF YOU "SEEING" THE PAGE:
-\n ${context.pageContent}
+URL: ${(state as any).url}
+TITLE: ${(state as any).title}
+
+PAGE CONTENT:
+${context.pageContent}
 ---
-THESE ARE ACTIONS AVAILABLE TO YOU:
-- Click: { "type": "click", "element": "selector", "description": "description" }
-- Input: { "type": "input", "element": "selector", "value": "text" }
-- Navigate: { "type": "navigate", "value": "url" }
-- Wait: { "type": "wait", "maxWait": milliseconds }
-- AskHuman: { "type": "askHuman", "question": "This is your direct line to the human end of this system. Want human to pass a bot check for you? Confused? Saying hi? Succeeded & reporting back? This is the thing to use." }
 ---
 TASK HISTORY:
 ${context.compressedHistory ? context.compressedHistory.slice(-5).join('\n') : 
   context.history ? context.history.slice(-5).join('\n') : 'No previous actions.'}
 ---
-Respond with a single JSON object for our next action, based on the available actions and your current task.
 `;
-      // Replace sequences of 2 or more spaces or any tab with a single space:
+      // Collapse multiple spaces or tabs.
       prompt = prompt.replace(/[\t ]{2,}/g, ' ');
       
       logger.debug('Built Ollama prompt', {
         promptLength: prompt.length,
         hasPageContent: !!context.pageContent,
-        hasSuccessfulActions: context.successfulActions?.length ?? 0 > 0,
+        hasSuccessfulActions: (context.successfulActions?.length ?? 0) > 0,
         feedback: this.buildFeedbackSection(context)
       });
 
@@ -223,5 +227,4 @@ Respond with a single JSON object for our next action, based on the available ac
   }
 }
 
-// Export the ollamaProcessor using the same interface as the Gemini processor
 export const ollamaProcessor: LLMProcessor = new OllamaProcessor();

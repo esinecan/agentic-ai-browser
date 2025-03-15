@@ -1,3 +1,4 @@
+import cssesc from 'cssesc';
 import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 import { Page } from 'playwright';
@@ -49,18 +50,18 @@ export async function generatePageSummary(page: Page, domSnapshot: any): Promise
     const href = $(el).attr('href');
     const text = (($(el).text().trim() || $(el).attr('placeholder') || '').replace(/\s+/g, ' ')).trim();
   
-    if(text && text.length > 0) {
-      let selector = tag;
-      if (id) {
-        selector = `#${id}`;
-      } else if (classes) {
-        selector = `${tag}.${classes.split(' ').join('.')}`;
-      } else if (href) {
-        selector = `${tag}.${href}`;
+    if (text && text.length > 0) {
+      if (tag === 'a' && href) {
+        // Resolve to absolute URL
+        const absoluteHref = new URL(href, page.url()).toString();
+        // Escape for valid CSS selector
+        const safeHref = cssesc(absoluteHref, { isIdentifier: false });
+        // Build attribute selector
+        const selector = `a[href="${safeHref}"]`;
+        summary += `- ${tag.toUpperCase()}: selector="${selector}", text="${text}"\n`;
       }
-    
-      summary += `- ${tag.toUpperCase()}: selector="${selector}", text="${text}"\n`;
     }
+    
   });
   summary += "\n";
   return summary;

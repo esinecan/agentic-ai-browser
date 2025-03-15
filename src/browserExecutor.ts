@@ -11,12 +11,12 @@ export const SIMILARITY_THRESHOLD = 0.7;
 
 // Define and export the action schema and type.
 export const ActionSchema = z.object({
-  type: z.enum(["click", "input", "navigate", "wait", "askHuman"]),
+  type: z.enum(["click", "input", "navigate", "wait", "sendHumanMessage"]),
   element: z.string().optional(),
   value: z.string().optional(),
   description: z.string().optional(),
   selectorType: z.enum(["css", "xpath", "text"]).optional().default("css"),
-  maxWait: z.number().optional().default(5000),
+  maxWait: z.number().optional().default(2000),
   question: z.string().optional(),
   previousUrl: z.string().optional(),
 });
@@ -295,79 +295,199 @@ async function findAlternativeSelector(page: Page, originalSelector: string): Pr
 
 // Helper: Get an element based on the action's selector.
 export async function getElement(
-    page: Page,
-    action: Action
-  ): Promise<ElementHandle | null> {
-    logger.browser.action('getElement', {
-      selector: action.element,
-      type: action.type,
-      selectorType: action.selectorType
-    });
+  page: Page,
+  action: Action
+): Promise<ElementHandle | null> {
+  logger.browser.action('getElement', {
+    selector: action.element,
+    type: action.type,
+    selectorType: action.selectorType
+  });
 
-    return doRetry(async () => {
-      if (!action.element) return null;
+  return doRetry(async () => {
+    let elementSelector = action.element;
 
-      // Define alternative selectors for common search patterns
-      let possibleSelectors: string[] = [action.element];
-      
-      // If we're looking for a text input, also check for textarea and common search box patterns
-      if (action.element === 'input[type=text]' || action.element === 'input[type="text"]') {
-        possibleSelectors = [
-          action.element,
-          'textarea',
-          '[role=searchbox]', 
-          '[role=search] input', 
-          '[role=search] textarea',
-          'textarea.gLFyf', // Google search specific
-          'input[name=q]',  // Common search parameter name
-          'input[placeholder*="search" i]', // Inputs with search in placeholder
-          'textarea[placeholder*="search" i]' // Textareas with search in placeholder
-        ];
+    // Helper to finalize an element for input actions.
+    // If the element is found and the action is an input, remove the "readonly" attribute.
+    async function finalizeElement<T>(elementHandle: T): Promise<T> {
+      if (action.type === 'input' && elementHandle) {
+        // Remove readonly so that fill can proceed.
+        await (elementHandle as any).evaluate((el: HTMLElement) => el.removeAttribute('readonly'));
       }
+      return elementHandle;
+    }
+  
+    // If no element selector is provided, exit early.
+    if (!elementSelector) return null;
+  
+    // === 2. DIRECT LOOKUP USING THE PROVIDED SELECTOR ===
+    try {
+      const directLocator = page.locator(elementSelector);
+      const directHandle = await directLocator.first().elementHandle();
+      if (directHandle) {
+        logger.debug('Element found directly using provided selector', { selector: elementSelector });
+        return await finalizeElement(directHandle);
+      }
+    } catch (err) {
+      logger.debug('Direct lookup failed', { selector: elementSelector, error: err });
+    }
+  
+    // === 3. ID SELECTOR HANDLING ===
+    // If the selector is an ID (starts with "#") for a click or input action, try a direct ID lookup.
+    if (typeof elementSelector === 'string' && elementSelector.startsWith('#') &&
+        (action.type === 'click' || action.type === 'input')) {
+      try {
+        await page.waitForSelector(elementSelector, { timeout: action.maxWait });
+        const idElement = await page.$(elementSelector);
+        if (idElement) {
+          logger.debug('Element found using direct ID lookup', { selector: elementSelector });
+          return await finalizeElement(idElement);
+        }
+      } catch (e) {
+        logger.debug('Direct ID lookup failed', { selector: elementSelector, error: e });
+      }
+    }
+  
+    // === 4. ALTERNATIVE SELECTORS ===
+    let possibleSelectors: string[] = [elementSelector];
+    if (typeof elementSelector === 'string') {
+      const lowerSel = elementSelector.toLowerCase();
+      if (lowerSel.includes('input')) {
+        possibleSelectors.push(
+          'textarea',
+          '[role=searchbox]',
+          '[role=search] input',
+          '[role=search] textarea',
+          'textarea.gLFyf',
+          'input[name=q]',
+          'input[placeholder*="search" i]',
+          'textarea[placeholder*="search" i]',
+          '#search',
+          '#searchbox',
+          '#searchInput',
+          '#search-input',
+          'input#search',
+          'input#q'
+        );
+        if (elementSelector.startsWith('#')) {
+          const idValue = elementSelector.substring(1);
+          possibleSelectors.push(
+            `input#${idValue}`,
+            `textarea#${idValue}`,
+            `[role=searchbox]#${idValue}`
+          );
+        }
+      }
+    }
+    
+    for (const selector of possibleSelectors) {
+      try {
+        const selectorToUse = action.selectorType === 'css' ? selector : elementSelector;
+        switch (action.selectorType) {
+          case 'css':
+            await page.waitForSelector(selectorToUse, {
+              timeout: Math.min(action.maxWait / possibleSelectors.length, 2000)
+            });
+            const altElement = await page.$(selectorToUse);
+            if (altElement) {
+              logger.debug('Element found using alternative CSS selector', { selector: selectorToUse });
+              return await finalizeElement(altElement);
+            }
+            break;
+          case 'xpath':
+            await page.waitForSelector(`xpath=${elementSelector}`, { timeout: action.maxWait });
+            const xpathElement = await page.$(`xpath=${elementSelector}`);
+            if (xpathElement) return await finalizeElement(xpathElement);
+            break;
+          case 'text':
+            await page.waitForSelector(`text=${elementSelector}`, { timeout: action.maxWait });
+            const textElement = await page.$(`text=${elementSelector}`);
+            if (textElement) return await finalizeElement(textElement);
+            break;
+        }
+      } catch (e) {
+        logger.debug('Alternative selector failed, trying next one', { selector, error: e });
+        continue;
+      }
+    }
+  
+    // === 5. ROLE-BASED FALLBACK FOR BUTTONS ===
+    // For click actions that hint at a button, try role-based lookup using the accessible name.
+    if (action.type === 'click' && typeof elementSelector === 'string' && elementSelector.toLowerCase().includes('button')) {
+      if (action.value) {
+        const buttonByRole = page.getByRole('button', { name: action.value });
+        if (await buttonByRole.count() === 1) {
+          logger.debug('Assuming the button via role with name', { name: action.value });
+          const roleButtonHandle = await buttonByRole.first().elementHandle();
+          if (roleButtonHandle) return roleButtonHandle;
+        }
+      }
+      const buttonLocator = page.locator('button');
+      if (await buttonLocator.count() === 1) {
+        logger.debug('Assuming the single button on the page');
+        const buttonHandle = await buttonLocator.first().elementHandle();
+        if (buttonHandle) return buttonHandle;
+      }
+    }
+  
+    // === 6. FALLBACK FOR TEXT INPUTS ===
+    // If the action type is input and none of the above selectors matched, assume the page has a single text input.
+    if (action.type === 'input') {
+      // Include input[type="search"] as some search fields (like on Wikipedia) use type "search".
+      const textInputLocator = page.locator('input[type="text"], textarea, input[type="search"]');
+      if (await textInputLocator.count() === 1) {
+        logger.debug('Assuming the single text input on the page');
+        const textInputHandle = await textInputLocator.first().elementHandle();
+        if (textInputHandle) return await finalizeElement(textInputHandle);
+      }
+    }
+    
+    // === 7. FALLBACK FOR LINKS ===
+    // Handle cases where link href contains special characters like parentheses that need escaping
+    if (action.type === 'click' && typeof elementSelector === 'string' && elementSelector.toLowerCase().includes('a[href')) {
+      logger.debug('Attempting specialized link handling', { selector: elementSelector });
       
-      // Try each selector in order until one works
-      for (const selector of possibleSelectors) {
-        try {
-          const selectorToUse = action.selectorType === "css" ? selector : action.element;
-          
-          switch (action.selectorType) {
-            case "css":
-              await page.waitForSelector(selectorToUse, { 
-                timeout: Math.min(action.maxWait / possibleSelectors.length, 2000) // Don't wait too long for each try
-              });
-              const element = await page.$(selectorToUse);
-              if (element) {
-                logger.debug('Element found', { 
-                  selector: selectorToUse,
-                  visible: await element.isVisible(),
-                  enabled: await element.isEnabled()
-                });
-                return element;
-              }
-              break;
-  
-            case "xpath":
-              await page.waitForSelector(`xpath=${action.element}`, { timeout: action.maxWait });
-              return page.$(`xpath=${action.element}`);
-  
-            case "text":
-              await page.waitForSelector(`text=${action.element}`, { timeout: action.maxWait });
-              return page.$(`text=${action.element}`);
-          }
-        } catch (e) {
-          // Continue to the next selector
-          continue;
+      // Try finding by link text if action.value is provided
+      if (action.value) {
+        const linkByText = page.getByRole('link', { name: action.value });
+        if (await linkByText.count() > 0) {
+          logger.debug('Found link by text content', { text: action.value });
+          const linkHandle = await linkByText.first().elementHandle();
+          if (linkHandle) return linkHandle;
         }
       }
       
-      logger.warn('No matching element found', {
-        triedSelectors: possibleSelectors
-      });
+      // Try extracting the href URL and finding by partial match
+      try {
+        const hrefMatch = elementSelector.match(/a\[href=["']([^"']+)["']\]/i);
+        if (hrefMatch) {
+          const urlToFind = hrefMatch[1];
+          // Find all links and check each href
+          const links = await page.$$('a');
+          for (const link of links) {
+            const href = await link.getAttribute('href');
+            if (href && href.includes(urlToFind.replace(/\(|\)/g, ''))) {
+              logger.debug('Found link by partial href match', { href });
+              return link;
+            }
+          }
+        }
+      } catch (e) {
+        logger.debug('Error in link href extraction', { error: e });
+      }
       
-      // If we've tried all selectors and none worked, throw an error
-      throw new Error(`No matching element found with selectors: ${possibleSelectors.join(', ')}`);
-    }, 2);
-  }
+      // If the page has only one link, use it as a fallback
+      const allLinks = await page.$$('a');
+      if (allLinks.length === 1) {
+        logger.debug('Using the only link on the page as fallback');
+        return allLinks[0];
+      }
+    }
+  
+    logger.warn('No matching element found', { triedSelectors: possibleSelectors });
+    throw new Error(`No matching element found with selectors: ${possibleSelectors.join(', ')}`);
+  }, 2);      
+}
 
 // Dummy text similarity function (replace with a proper implementation as needed).
 export function textSimilarity(a: string, b: string): number {
@@ -489,8 +609,21 @@ export async function getPageState(page: Page): Promise<object> {
     const url = page.url();
     const title = await page.title();
 
-    // Extract DOM snapshot (includes raw HTML) 
-    const domSnapshot = await extractDOMSnapshot(page);
+    // Extract DOM snapshot with retry for navigation errors
+    let domSnapshot;
+    try {
+      domSnapshot = await extractDOMSnapshot(page);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('Execution context was destroyed')) {
+        logger.warn('Context destroyed during snapshot, waiting for navigation to complete');
+        // Wait for navigation to complete
+        await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+        // Try again with a more lightweight extraction
+        domSnapshot = await extractDOMSnapshotLite(page);
+      } else {
+        throw err;
+      }
+    }
 
     // Use pageInterpreter to return unified page content
     const { generatePageSummary } = await import('./pageInterpreter.js');
@@ -518,67 +651,123 @@ export async function getPageState(page: Page): Promise<object> {
   }
 }
 
-// New function to extract DOM snapshot with all needed elements
-async function extractDOMSnapshot(page: Page): Promise<any> {
-  return page.evaluate(() => {
-    const rawContent = document.body.innerHTML;
-
-    const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+// Lightweight version of DOM snapshot for recovery situations
+async function extractDOMSnapshotLite(page: Page): Promise<any> {
+  // Breaking the extraction into smaller chunks to avoid long-running evaluations
+  const title = await page.title().catch(() => "");
+  
+  // Get raw content separately with a short timeout
+  const rawContent = await page.evaluate(() => document.body.innerHTML.substring(0, 5000))
+    .catch(() => "Content extraction failed");
+  
+  // Get headings in a separate evaluation
+  const headings = await page.evaluate(() => {
+    return Array.from(document.querySelectorAll('h1, h2, h3'))
       .map(h => ({
         tag: h.tagName.toLowerCase(),
         text: h.textContent?.trim() || ''
       }));
+  }).catch(() => []);
+  
+  // Get basic link information
+  const links = await page.evaluate(() => {
+    return Array.from(document.querySelectorAll('a'))
+      .slice(0, 20) // Limit to first 20 links for speed
+      .map(a => ({
+        text: a.textContent?.trim() || '',
+        url: a.href || ''
+      }));
+  }).catch(() => []);
+  
+  return {
+    title,
+    headings,
+    links,
+    rawContent
+  };
+}
 
-    // Extract links
-    const links = Array.from(document.querySelectorAll('a')).map(a => ({
-      text: a.textContent?.trim() || '',
-      url: a.href || '',
-      title: a.getAttribute('title') || null,
-      aria: a.getAttribute('aria-label') || null
-    }));
+// Split the original extractDOMSnapshot into smaller parts
+async function extractDOMSnapshot(page: Page): Promise<any> {
+  // Use Promise.all to run these extractions in parallel for speed
+  const [title, rawContent, headings, links, buttons, inputs, landmarks] = await Promise.all([
+    page.title().catch(() => ""),
     
-    // Extract buttons
-    const buttons = Array.from(document.querySelectorAll('button, [role="button"]')).map(b => 
-      b.textContent?.trim() || b.getAttribute('aria-label') || b.getAttribute('title') || ''
-    );
+    page.evaluate(() => document.body.innerHTML.substring(0, 5000))
+      .catch(() => "Failed to get content"),
     
-    // Extract inputs
-    const inputs = Array.from(document.querySelectorAll('input, textarea, select')).map(input => {
-      if (input instanceof HTMLInputElement) {
-        return {
-          type: input.type,
-          name: input.name,
-          id: input.id,
-          placeholder: input.placeholder || null,
-          value: input.value || null
-        };
-      }
-      return input.id || input.getAttribute('name') || input.getAttribute('placeholder') || 'input field';
-    });
+    page.evaluate(() => {
+      return Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+        .map(h => ({
+          tag: h.tagName.toLowerCase(),
+          text: h.textContent?.trim() || ''
+        }));
+    }).catch(() => []),
     
-    // Extract landmarks
-    const landmarks = Array.from(
-      document.querySelectorAll('[role="main"], [role="navigation"], [role="search"], main, nav, article, section, form')
-    ).map(l => ({
-      role: l.getAttribute('role') || l.tagName.toLowerCase(),
-      text: l.textContent?.trim() || null
-    }));
+    page.evaluate(() => {
+      return Array.from(document.querySelectorAll('a'))
+        .slice(0, 30) // Limit to reduce execution time
+        .map(a => ({
+          text: a.textContent?.trim() || '',
+          url: a.href || '',
+          title: a.getAttribute('title') || null,
+          aria: a.getAttribute('aria-label') || null
+        }));
+    }).catch(() => []),
     
-    // Return complete snapshot including raw HTML:
-    return {
-      title: document.title,
-      headings,
-      links,
-      buttons,
-      inputs,
-      landmarks,
-      rawContent: rawContent.substring(0, 5000)
-    };
-  });
+    page.evaluate(() => {
+      return Array.from(document.querySelectorAll('button, [role="button"]'))
+        .slice(0, 20)
+        .map(b => b.textContent?.trim() || b.getAttribute('aria-label') || b.getAttribute('title') || '');
+    }).catch(() => []),
+    
+    page.evaluate(() => {
+      return Array.from(document.querySelectorAll('input, textarea, select'))
+        .slice(0, 20)
+        .map(input => {
+          if (input instanceof HTMLInputElement) {
+            return {
+              type: input.type,
+              name: input.name,
+              id: input.id,
+              placeholder: input.placeholder || null
+            };
+          }
+          return { id: input.id || input.getAttribute('name') || 'input field' };
+        });
+    }).catch(() => []),
+    
+    page.evaluate(() => {
+      return Array.from(
+        document.querySelectorAll('[role="main"], [role="navigation"], [role="search"], main, nav, article')
+      ).slice(0, 10)
+      .map(l => ({
+        role: l.getAttribute('role') || l.tagName.toLowerCase(),
+        text: l.textContent?.substring(0, 100)?.trim() || null
+      }));
+    }).catch(() => [])
+  ]);
+  
+  return {
+    title,
+    headings,
+    links,
+    buttons,
+    inputs,
+    landmarks,
+    rawContent
+  };
 }
 
 // Verify that an action succeeded based on its type.
 export async function verifyAction(page: Page, action: Action): Promise<boolean> {
+  // Add INFO level logging here with full action object
+  logger.info('Verifying action', {
+    actionType: action.type,
+    actionDetails: action,  // Log the entire action object
+    url: page.url()
+  });
+
   logger.browser.action('verifyAction', {
     type: action.type,
     element: action.element,
@@ -616,7 +805,7 @@ export async function verifyAction(page: Page, action: Action): Promise<boolean>
           const currentUrl = page.url();
           return currentUrl.includes(action.value || "");
         }
-        case "askHuman": // Always consider human interaction successful
+        case "sendHumanMessage": // Always consider human interaction successful
           return true;
         case "wait":
           return true;
@@ -629,6 +818,13 @@ export async function verifyAction(page: Page, action: Action): Promise<boolean>
       type: action.type,
       success,
       url: page.url()
+    });
+
+    // Add completion INFO log
+    logger.info(`Action verification ${success ? 'succeeded' : 'failed'}`, {
+      type: action.type,
+      element: action.element,
+      duration: `${Date.now() - startTime}ms`
     });
 
     return success;

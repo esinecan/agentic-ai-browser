@@ -11,7 +11,7 @@ dotenv.config();
 process.on('SIGINT', async () => {
   console.log('\nReceived SIGINT (Ctrl+C). Stopping agent...');
   await stopAgent();
-  logger.close();
+  //logger.close();
   process.exit(0);
 });
 
@@ -38,7 +38,7 @@ process.stdin.on('keypress', async (str, key) => {
   if (key.name === 'q') {
     console.log('\nStop key pressed. Requesting agent to stop gracefully...');
     await stopAgent();
-    logger.close();
+    //logger.close();
   }
 });
 
@@ -57,8 +57,8 @@ if (process.stdin.isTTY) {
     logger.error('Fatal error in main execution', { error });
     process.exit(1);
   } finally {
-    logger.close();
-    rl.close();
+    //logger.close();
+    //rl.close();
   }
 })();
 

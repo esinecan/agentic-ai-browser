@@ -139,13 +139,14 @@ Using the advanced gemini-2.0-flash model:
 ```ini
 LLM_PROVIDER=gemini
 GEMINI_API_KEY=your-key-here
+LLM_MODEL=gemini-2.0-flash
 ```
 
 ### Ollama (Local)
 ```ini
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3
+LLM_MODEL=llama3
 ```
 
 ---
