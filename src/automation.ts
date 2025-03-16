@@ -474,7 +474,7 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
           type: 'sendHumanMessage',
           question: `I've tried ${ctx.retries} times to ${failedActionType} but keep failing. The page title is "${await ctx.page.title()}". What should I try next?`,
           selectorType: 'css',
-          maxWait: 5000
+          maxWait: 1000
         };
         
         return "sendHumanMessage";
@@ -496,7 +496,7 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
           type: 'sendHumanMessage',
           question: `I seem to be stuck in a loop of waiting. The page title is "${await ctx.page.title()}". What should I try next?`,
           selectorType: 'css',
-          maxWait: 5000
+          maxWait: 1000
         };
         return "sendHumanMessage";
       }
@@ -688,7 +688,7 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
     try {
       const url = new URL(ctx.action.value);
       await ctx.page.goto(url.toString(), { 
-        timeout: 30000,
+        timeout: 10000,
         waitUntil: "domcontentloaded"
       });
       

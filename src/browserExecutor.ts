@@ -2,10 +2,14 @@ import { chromium, Browser, Page, ElementHandle, BrowserContext } from "playwrig
 import dotenv from "dotenv";
 import { z } from "zod";
 import logger from './utils/logger.js';
+// Ensure DOM extractors are registered
+import './core/dom-extraction/initialize.js';
+// Import the new DOM extraction system
+import { PageAnalyzer } from './core/dom-extraction/PageAnalyzer.js';
 
 dotenv.config();
 
-export const DEFAULT_NAVIGATION_TIMEOUT = 30000;
+export const DEFAULT_NAVIGATION_TIMEOUT = 10000;
 export const RETRY_DELAY_MS = 2000;
 export const SIMILARITY_THRESHOLD = 0.7;
 
@@ -74,12 +78,12 @@ export async function launchBrowser(): Promise<Browser> {
 // Create a new page and navigate to the starting URL.
 export async function createPage(browser: Browser): Promise<Page> {
   logger.browser.action('createPage', {
-    startUrl: process.env.START_URL || "https://online.bonjourr.fr/"
+    startUrl: process.env.START_URL || "https://en.wikipedia.org/wiki/Main_Page"
   });
 
   try {
     const page = await browser.newPage();
-    await page.goto(process.env.START_URL || "https://online.bonjourr.fr/");
+    await page.goto(process.env.START_URL || "https://en.wikipedia.org/wiki/Main_Page");
     
     logger.info('Page created and navigated to start URL', {
       url: await page.url(),
@@ -314,38 +318,32 @@ export async function getPageState(page: Page): Promise<object> {
   logger.browser.action('getState', { url: page.url() });
 
   try {
-    const url = page.url();
-    const title = await page.title();
-
-    // Extract DOM snapshot with retry for navigation errors
-    let domSnapshot;
-    try {
-      domSnapshot = await extractDOMSnapshot(page);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('Execution context was destroyed')) {
-        logger.warn('Context destroyed during snapshot, waiting for navigation to complete');
-        // Wait for navigation to complete
-        await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-        // Try again with a more lightweight extraction
-        domSnapshot = await extractDOMSnapshotLite(page);
-      } else {
-        throw err;
-      }
-    }
-
+    // Test extractors to verify they're working
+    const { testExtractors } = await import('./utils/extractorTester.js');
+    await testExtractors(page);
+    
+    // Get a standard snapshot with our new system
+    const domSnapshot = await PageAnalyzer.extractSnapshot(page);
+    
     // Use pageInterpreter to return unified page content
     const { generatePageSummary } = await import('./pageInterpreter.js');
     const pageContent = await generatePageSummary(page, domSnapshot);
 
     logger.debug('Page state captured', {
-      url,
-      title,
-      pageContentLength: pageContent.length
+      url: domSnapshot.url,
+      title: domSnapshot.title,
+      pageContentLength: pageContent.length,
+      elementsFound: {
+        buttons: domSnapshot.elements?.buttons?.length || 0,
+        inputs: domSnapshot.elements?.inputs?.length || 0,
+        links: domSnapshot.elements?.links?.length || 0,
+        landmarks: domSnapshot.elements?.landmarks?.length || 0
+      }
     });
 
     return {
-      url,
-      title,
+      url: domSnapshot.url,
+      title: domSnapshot.title,
       pageContent
     };
   } catch (error) {
@@ -359,112 +357,17 @@ export async function getPageState(page: Page): Promise<object> {
   }
 }
 
+// The functions below are no longer needed as they're replaced by PageAnalyzer
 // Lightweight version of DOM snapshot for recovery situations
 async function extractDOMSnapshotLite(page: Page): Promise<any> {
-  // Breaking the extraction into smaller chunks to avoid long-running evaluations
-  const title = await page.title().catch(() => "");
-  
-  // Get raw content separately with a short timeout
-  const rawContent = await page.evaluate(() => document.body.innerHTML.substring(0, 5000))
-    .catch(() => "Content extraction failed");
-  
-  // Get headings in a separate evaluation
-  const headings = await page.evaluate(() => {
-    return Array.from(document.querySelectorAll('h1, h2, h3'))
-      .map(h => ({
-        tag: h.tagName.toLowerCase(),
-        text: h.textContent?.trim() || ''
-      }));
-  }).catch(() => []);
-  
-  // Get basic link information
-  const links = await page.evaluate(() => {
-    return Array.from(document.querySelectorAll('a'))
-      .slice(0, 20) // Limit to first 20 links for speed
-      .map(a => ({
-        text: a.textContent?.trim() || '',
-        url: a.href || ''
-      }));
-  }).catch(() => []);
-  
-  return {
-    title,
-    headings,
-    links,
-    rawContent
-  };
+  // This function is replaced by PageAnalyzer.extractLiteSnapshot
+  return PageAnalyzer.extractLiteSnapshot(page);
 }
 
 // Split the original extractDOMSnapshot into smaller parts
 async function extractDOMSnapshot(page: Page): Promise<any> {
-  // Use Promise.all to run these extractions in parallel for speed
-  const [title, rawContent, headings, links, buttons, inputs, landmarks] = await Promise.all([
-    page.title().catch(() => ""),
-    
-    page.evaluate(() => document.body.innerHTML.substring(0, 5000))
-      .catch(() => "Failed to get content"),
-    
-    page.evaluate(() => {
-      return Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
-        .map(h => ({
-          tag: h.tagName.toLowerCase(),
-          text: h.textContent?.trim() || ''
-        }));
-    }).catch(() => []),
-    
-    page.evaluate(() => {
-      return Array.from(document.querySelectorAll('a'))
-        .slice(0, 30) // Limit to reduce execution time
-        .map(a => ({
-          text: a.textContent?.trim() || '',
-          url: a.href || '',
-          title: a.getAttribute('title') || null,
-          aria: a.getAttribute('aria-label') || null
-        }));
-    }).catch(() => []),
-    
-    page.evaluate(() => {
-      return Array.from(document.querySelectorAll('button, [role="button"]'))
-        .slice(0, 20)
-        .map(b => b.textContent?.trim() || b.getAttribute('aria-label') || b.getAttribute('title') || '');
-    }).catch(() => []),
-    
-    page.evaluate(() => {
-      return Array.from(document.querySelectorAll('input, textarea, select'))
-        .slice(0, 20)
-        .map(input => {
-          if (input instanceof HTMLInputElement) {
-            return {
-              type: input.type,
-              name: input.name,
-              id: input.id,
-              placeholder: input.placeholder || null
-            };
-          }
-          return { id: input.id || input.getAttribute('name') || 'input field' };
-        });
-    }).catch(() => []),
-    
-    page.evaluate(() => {
-      return Array.from(
-        document.querySelectorAll('[role="main"], [role="navigation"], [role="search"], main, nav, article')
-      ).slice(0, 10)
-      .map(l => ({
-        role: l.getAttribute('role') || l.tagName.toLowerCase(),
-        text: l.textContent?.substring(0, 100)?.trim() || null
-      }));
-    }).catch(() => [])
-  ]);
-  
-  return {
-    title,
-    headings,
-    links,
-    buttons,
-    inputs,
-    landmarks,
-    rawContent
-  };
+  // This function is replaced by PageAnalyzer.extractSnapshot
+  return PageAnalyzer.extractSnapshot(page);
 }
 
 // Verify that an action succeeded based on its type.

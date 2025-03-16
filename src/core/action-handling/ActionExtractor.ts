@@ -194,7 +194,7 @@ export class ActionExtractor {
       const question = text.length > 200 ? text.substring(0, 200) + "..." : text;
       logger.debug("Converting to sendHumanMessage due to help indicators", { matchedPhrases: matchingIndicators, questionPreview: question });
 
-      return { type: 'sendHumanMessage', question, selectorType: 'css', maxWait: 5000 };
+      return { type: 'sendHumanMessage', question, selectorType: 'css', maxWait: 1000 };
     }
     return null;
   }

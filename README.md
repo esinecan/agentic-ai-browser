@@ -1,8 +1,9 @@
-Here's a modified version of the README.md with containerization references removed:
+# Agentic AI Browser
 
-```markdown
+An intelligent web automation agent that uses state-of-the-art AI techniques to understand and interact with web pages autonomously.
+
 ## Overview
-This project is a **sophisticated (also pretty darn cool), AI-driven web automation agent** that uses **Playwright** for browser interactions and **LLM integration** for intelligent decision-making. It's designed for **reliable, adaptable web automation** with robust element detection and contextual understanding.
+This project is a **sophisticated AI-driven web automation agent** that uses **Playwright** for browser interactions and **LLM integration** for intelligent decision-making. It's designed for **reliable, adaptable web automation** with robust element detection and contextual understanding.
 
 ## Features
 - **Agentic Web Automation** – Uses AI to decide and execute actions based on page understanding
@@ -33,7 +34,7 @@ cd agentic-ai-browser
 Create a .env file in the root directory:
 ```ini
 HEADLESS=false
-START_URL=https://www.you.com
+START_URL=https://www.example.com
 LOG_DIR=./logs
 SCREENSHOT_DIR=./screenshots
 LLM_PROVIDER=gemini  # or ollama
@@ -60,53 +61,99 @@ npm start
 
 ---
 
-## Project Structure
-- package.json: Contains the project dependencies
-- tsconfig.json: TypeScript configuration file
-- jest.config.js: Jest testing configuration
-- src: Contains the source code for the agent
-  - automation.ts: Core automation logic and execution flow
-  - `browserExecutor.ts`: Executes browser actions using Playwright
-  - `pageInterpreter.ts`: Analyzes and summarizes web pages for the LLM
-  - `successPatterns.ts`: Tracks successful interaction patterns
-  - `index.ts`: Entry point for the application
-  - `llmProcessor.ts`: Abstraction layer for LLM integration
-  - llmProcessorGemini.ts: Gemini-specific implementation
-  - `llmProcessorOllama.ts`: Ollama-specific implementation
-  - `actionExtractor.ts`: Handles normalization and extraction of actions
-  - `utils/agentState.js`: Manages the state of the automation agent
-  - `__tests__/`: Unit tests for core components
-- data: Contains reference data like success patterns
-- logs: Stores execution logs with timestamps
-- screenshots: Stores screenshots taken during automation
+## Technical Architecture
 
----
+### 1. DOM Extraction & Analysis System
+The project features a sophisticated DOM extraction system that provides structured page understanding:
 
-## Core Components
+#### Core Components:
+- **DOMExtractor Interface**: Defines the contract for all extractors
+- **PageAnalyzer**: Orchestrates extraction and combines results
+- **Initialization System**: Ensures all extractors are registered properly 
 
-### **1️⃣ Intelligent Page Understanding**
-The agent analyzes web pages at multiple levels:
-- **Page Summarization** – High-level description of the page purpose and structure
-- **Element Detection** – Identifies interactive elements across different implementation patterns
-- **Context Preservation** – Maintains awareness of past interactions and successes
+#### Extractor Types:
+- **Basic Extractors**: Title, URL, meta description
+- **Element Extractors**: Buttons, inputs, links, landmarks
+- **Content Extractors**: Main content, headings
+- **Advanced Extractors**: Navigation elements, forms
 
-### **2️⃣ Adaptive Element Selection**
-- Automatically detects alternative selectors when primary ones fail
-- Handles different implementations of common UI patterns (search boxes, forms, etc.)
-- Learns from successful interactions to improve future selections
+#### Extraction Process:
+1. `PageAnalyzer.extractSnapshot()` triggers the process
+2. Applicable extractors are selected based on configuration
+3. Each extractor runs independently with timeout protection
+4. Results are combined into a unified DOMSnapshot object
+5. `pageInterpreter.generatePageSummary()` converts the snapshot to LLM-friendly text
 
-### **3️⃣ Action Execution & Verification**
-Each action is executed with robust verification:
-- Clicks wait for **network idle** and verify state changes
-- Inputs are **validated** after entry with alternative strategies if needed
-- Navigation confirms **URL change** and page load completion
-- Automatic recovery with alternative selectors when primary ones fail
-- Enhanced resilience with increased retry attempts
+### 2. Element Selection System
+The system uses a strategy pattern to locate elements through multiple approaches:
 
-### **4️⃣ Agent Control**
-- Stop the agent execution at any time with the `stopAgent()` function
-- Request human intervention when the agent is stuck
-- Agent state tracking for better control and monitoring
+#### Strategy Architecture:
+- **ElementFinder**: Core class that coordinates strategies
+- **BaseElementStrategy**: Abstract base class for all strategies
+- **Strategy Registry**: Manages and prioritizes strategies
+
+#### Selection Strategies (in priority order):
+1. **DirectSelectorStrategy**: Tries the exact selector provided
+2. **IdSelectorStrategy**: Specializes in ID-based selectors
+3. **RoleBasedStrategy**: Uses ARIA roles and accessibility properties
+4. **LinkStrategy**: Special handling for link elements
+5. **SingleElementStrategy**: Fallback for simple pages
+
+#### Selection Process:
+1. `elementFinder.findElement()` is called with an action
+2. Each applicable strategy is tried in priority order
+3. First strategy to find a matching element returns it
+4. If all strategies fail, alternative suggestions are provided
+
+### 3. Action Execution Pipeline
+Actions flow through a sophisticated pipeline:
+
+#### Core Components:
+- **ActionExtractor**: Parses raw LLM output into structured actions
+- **BrowserExecutor**: Handles browser interactions with Playwright
+- **SuccessPatterns**: Tracks successful interaction patterns
+- **RecoveryEngine**: Handles failures and retries
+
+#### Action Types:
+- **Click**: Interacts with buttons and clickable elements
+- **Input**: Enters text into form fields
+- **Navigate**: Loads URLs and handles navigation
+- **Wait**: Pauses execution
+- **SendHumanMessage**: Requests human assistance
+
+#### Verification Process:
+1. Action is executed via Playwright
+2. `verifyAction()` confirms success based on action type
+3. Results feed into success pattern tracking
+4. Failed actions trigger the recovery system
+
+### 4. State Management & Automation Flow
+The system uses a state machine for reliable execution flow:
+
+#### Key States:
+- **start**: Initializes the browser and page
+- **chooseAction**: Requests next action from the LLM
+- **[action types]**: Handles specific actions (click, input, etc.)
+- **handleFailure**: Manages retries and recovery
+- **terminate**: Closes the browser
+
+#### Goal Tracking:
+- **Milestones**: Tracks progress toward the user's goal
+- **Progress Detection**: Identifies meaningful state changes
+- **Feedback Generation**: Provides context for the LLM
+
+### 5. LLM Integration
+Support for multiple LLM backends with a unified interface:
+
+#### Providers:
+- **Gemini**: Using Google's Gemini API
+- **Ollama**: Local LLM deployment
+
+#### Prompt Architecture:
+- **System Prompt**: Defines agent role and capabilities
+- **Page Content**: Structured representation of the web page
+- **Task History**: Compressed action history
+- **Feedback**: Success/failure information and suggestions
 
 ---
 
@@ -116,7 +163,7 @@ Each action is executed with robust verification:
 - Page state snapshots are recorded before each action
 - To debug with visual browser:
 ```sh
-# Set in .env or use environment variable. It's much more fun to watch the model work IMO:
+# Set in .env or use environment variable:
 HEADLESS=false npm run dev
 ```
 
@@ -137,21 +184,24 @@ LLM_MODEL=gemini-2.0-flash
 ```ini
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
-LLM_MODEL=llama3
+LLM_MODEL=phi4-mini
 ```
 
 ---
 
 ## Future Plans
-✅ **Modular execution layer (DONE)**
-✅ **Action verification (DONE)**
-✅ **Intelligent page interpretation (DONE)**
-✅ **Multi-LLM support (DONE)**
-✅ **Agent state management (DONE)**
-✅ **Manual intervention capabilities (DONE)**
+✅ **Modular execution layer**
+✅ **Action verification**
+✅ **Intelligent page interpretation**
+✅ **Multi-LLM support**
+✅ **Agent state management**
+✅ **DOM extraction system**
+✅ **Element selection strategies**
+✅ **Manual intervention capabilities**
 🔜 **Workflow recording & replay**
 🔜 **Support for API-based automation**
 🔜 **Multi-tab and window handling**
+🔜 **Extended form interaction capabilities**
 
 ---
 
