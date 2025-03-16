@@ -1,7 +1,7 @@
 import { launchBrowser, createPage, getPageState, verifyAction, GraphContext, compressHistory, verifyElementExists, Action } from "./browserExecutor.js";
-import { ollamaProcessor } from "./llmProcessorOllama.js";
-import { geminiProcessor } from "./llmProcessorGemini.js";
-import { LLMProcessor } from './llmProcessor.js';
+import { ollamaProcessor } from "./core/llm/llmProcessorOllama.js";
+import { geminiProcessor } from "./core/llm/llmProcessorGemini.js";
+import { LLMProcessor } from './core/llm/llmProcessor.js';
 import readline from 'readline';
 import fs from 'fs';
 import path from 'path';
@@ -474,7 +474,7 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
           type: 'sendHumanMessage',
           question: `I've tried ${ctx.retries} times to ${failedActionType} but keep failing. The page title is "${await ctx.page.title()}". What should I try next?`,
           selectorType: 'css',
-          maxWait: 5000
+          maxWait: 1000
         };
         
         return "sendHumanMessage";
@@ -496,7 +496,7 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
           type: 'sendHumanMessage',
           question: `I seem to be stuck in a loop of waiting. The page title is "${await ctx.page.title()}". What should I try next?`,
           selectorType: 'css',
-          maxWait: 5000
+          maxWait: 1000
         };
         return "sendHumanMessage";
       }
@@ -517,7 +517,7 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
 
     // Verify element existence
     if (action.element && ['input'].includes(action.type.toLowerCase())) {
-      try {
+      /*try {
         logger.browser.action('elementCheck', {
           element: action.element,
           type: action.type
@@ -538,7 +538,7 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
         }
       } catch (error) {
         logger.error('Error verifying element existence', error);
-      }
+      }*/
     }
 
     const actionType = action.type.toLowerCase();
@@ -688,7 +688,7 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
     try {
       const url = new URL(ctx.action.value);
       await ctx.page.goto(url.toString(), { 
-        timeout: 30000,
+        timeout: 10000,
         waitUntil: "domcontentloaded"
       });
       
@@ -891,7 +891,7 @@ async function runStateMachine(ctx: GraphContext): Promise<void> {
 export async function runGraph(): Promise<void> {
   // Prompt the user for their automation goal
   //const userGoal = await promptUser("Please enter your goal for this automation: ");
-  const userGoal = "go to https://duckduckgo.com/ and search the word 'marco-o1 github' via the search bar --> Find its link --> Click on it --> Tell me what it's about via sendHumanMessage action once you understand the page content.";
+  const userGoal = "go to https://duckduckgo.com/ and search the word 'marco-o1 github' via the search bar --> There's a button () --> Click on it --> Tell me what it's about via sendHumanMessage action once you understand the page content.";
   
   // Initialize context with user goal and history
   const ctx: GraphContext = { 

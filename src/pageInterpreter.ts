@@ -2,32 +2,32 @@ import cssesc from 'cssesc';
 import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 import { Page } from 'playwright';
+// Import the new DOM extraction system
+import { PageAnalyzer } from './core/dom-extraction/PageAnalyzer.js';
+import { DOMSnapshot, DOMElement } from './core/dom-extraction/DOMExtractor.js';
 
 /**
- * Returns a structured representation of the page content using Cheerio.
+ * Returns a structured representation of the page content using the DOM extraction system.
  */
 export async function generatePageSummary(page: Page, domSnapshot: any): Promise<string> {
-  const htmlContent = await page.content();
-  const $ = cheerio.load(htmlContent);
-
-  // Remove irrelevant elements.
-  $('script, style, svg, noscript, iframe, meta, link').remove();
-
+  // Use our new DOM extraction system for more comprehensive data if not already provided
+  const fullSnapshot: DOMSnapshot = domSnapshot && domSnapshot.url ? 
+                                  domSnapshot : 
+                                  await PageAnalyzer.extractComprehensiveSnapshot(page);
+  
   let summary = '';
-
-  // Page metadata.
-  const title = $('title').text().trim() || domSnapshot.title || 'No title';
-  const metaDescription = $('meta[name="description"]').attr('content')?.trim() || '';
-  summary += `PAGE TITLE: ${title}\n`;
-  if (metaDescription) {
-    summary += `META DESCRIPTION: ${metaDescription}\n`;
+  
+  // Page metadata
+  summary += `PAGE TITLE: ${fullSnapshot.title}\n`;
+  if (fullSnapshot.content?.metaDescription) {
+    summary += `META DESCRIPTION: ${fullSnapshot.content.metaDescription}\n`;
   }
   summary += '\n';
-
-  // Major content sections from landmarks.
-  if (domSnapshot.landmarks?.length) {
+  
+  // Main content areas from landmarks
+  if (fullSnapshot.elements?.landmarks?.length) {
     summary += "MAIN CONTENT AREAS:\n";
-    domSnapshot.landmarks.forEach((landmark: any) => {
+    fullSnapshot.elements.landmarks.forEach(landmark => {
       if (landmark.text?.trim()) {
         const cleanText = landmark.text.replace(/\s+/g, ' ').trim();
         summary += `[${landmark.role}] ${cleanText.substring(0, 300)}${cleanText.length > 300 ? '...' : ''}\n`;
@@ -35,34 +35,90 @@ export async function generatePageSummary(page: Page, domSnapshot: any): Promise
     });
     summary += "\n";
   }
-
-   // Extract a snippet of body text.
-   const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
-   summary += `PAGE CONTENT:\n${bodyText.substring(0, 5000)}${bodyText.length > 5000 ? '...' : ''}\n`;
-
-  // Interactive elements.
-  summary += "INTERACTIVE ELEMENTS:\n";
-  $('a, button, input, select, textarea').each((_, el) => {
-    const element = el as Element;
-    const tag = element.tagName ? element.tagName.toLowerCase() : 'unknown';
-    const id = $(el).attr('id');
-    const classes = $(el).attr('class');
-    const href = $(el).attr('href');
-    const text = (($(el).text().trim() || $(el).attr('placeholder') || '').replace(/\s+/g, ' ')).trim();
   
-    if (text && text.length > 0) {
-      if (tag === 'a' && href) {
-        // Resolve to absolute URL
-        const absoluteHref = new URL(href, page.url()).toString();
-        // Escape for valid CSS selector
-        const safeHref = cssesc(absoluteHref, { isIdentifier: false });
-        // Build attribute selector
-        const selector = `a[href="${safeHref}"]`;
-        summary += `- ${tag.toUpperCase()}: selector="${selector}", text="${text}"\n`;
+  // Extract main content
+  if (fullSnapshot.content?.mainContent) {
+    summary += `PAGE CONTENT:\n${fullSnapshot.content.mainContent}\n\n`;
+  } else {
+    // Fallback to raw HTML content if needed
+    const htmlContent = await page.content();
+    const $ = cheerio.load(htmlContent);
+    $('script, style, svg, noscript, iframe, meta, link').remove();
+    const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
+    summary += `PAGE CONTENT:\n${bodyText.substring(0, 5000)}${bodyText.length > 5000 ? '...' : ''}\n\n`;
+  }
+  
+  // Interactive elements
+  summary += "INTERACTIVE ELEMENTS:\n";
+  
+  // Add buttons
+  if (fullSnapshot.elements?.buttons?.length) {
+    fullSnapshot.elements.buttons.forEach(button => {
+      if (button.text) {
+        const id = button.id ? `#${button.id}` : '';
+        const selector = id || (button.classes?.length ? `.${button.classes.join('.')}` : 'button');
+        summary += `- BUTTON: selector="${selector}", text="${button.text}"\n`;
       }
-    }
-    
-  });
+    });
+  }
+  
+  // Add inputs
+  if (fullSnapshot.elements?.inputs?.length) {
+    fullSnapshot.elements.inputs.forEach(input => {
+      const type = input.attributes?.type || input.tagName;
+      const id = input.id ? `#${input.id}` : '';
+      const name = input.attributes?.name;
+      const nameSelector = name ? `[name="${name}"]` : '';
+      const selector = id || (input.tagName + nameSelector);
+      const placeholder = input.attributes?.placeholder || '';
+      
+      summary += `- INPUT: selector="${selector}", type="${type}"${placeholder ? `, placeholder="${placeholder}"` : ''}\n`;
+    });
+  }
+  
+  // Add forms from our advanced extractors
+  if (fullSnapshot.elements?.forms?.length) {
+    fullSnapshot.elements.forms.forEach((form: DOMElement) => {
+      const id = form.id ? `#${form.id}` : 'form';
+      const method = form.method || 'GET';
+      const submitText = form.submitText || 'Submit';
+      
+      summary += `- FORM: selector="${id}", method="${method}", submit="${submitText}"\n`;
+      
+      if (form.inputs && Array.isArray(form.inputs)) {
+        form.inputs.forEach((input: any) => {
+          if (input.label || input.name) {
+            summary += `  - field: ${input.label || input.name} (${input.type}${input.required ? ', required' : ''})\n`;
+          }
+        });
+      }
+    });
+  }
+  
+  // Add links (limited to most important)
+  const links = fullSnapshot.elements?.links || [];
+  const navigationLinks = fullSnapshot.content?.navigation?.[0]?.links || [];
+  
+  // Prioritize navigation links
+  if (navigationLinks.length) {
+    summary += "\nNAVIGATION LINKS:\n";
+    navigationLinks.slice(0, 10).forEach((link: any) => {
+      if (link.text && link.href) {
+        summary += `- ${link.text} -> ${link.href}\n`;
+      }
+    });
+  }
+  
+  if (links.length && links.length <= 10) {
+    summary += "\nOTHER LINKS:\n";
+    links.forEach((link: DOMElement) => {
+      const href = link.href || link.attributes?.href;
+      if (link.text && href) {
+        summary += `- ${link.text} -> ${href}\n`;
+      }
+    });
+  }
+  
   summary += "\n";
   return summary;
 }

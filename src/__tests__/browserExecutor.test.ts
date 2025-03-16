@@ -93,7 +93,7 @@ describe('browserExecutor', () => {
           type: 'click',
           element: '#button',
           selectorType: 'css',
-          maxWait: 5000
+          maxWait: 1000
         };
         
         const result = ActionSchema.safeParse(validAction);
