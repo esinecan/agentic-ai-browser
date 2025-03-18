@@ -631,9 +631,33 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
       const elementHandle = await getElement(ctx.page, ctx.action);
       if (!elementHandle) throw new Error("Element not found");
       
-      await elementHandle.fill(ctx.action.value!, { timeout: ctx.action.maxWait });
-      const verified = await verifyAction(ctx.page, ctx.action);
+      // FOCUS-FIRST APPROACH: Click to focus before filling
+      await elementHandle.click({ timeout: ctx.action.maxWait / 2 });
       
+      // Then fill the value
+      await elementHandle.fill(ctx.action.value!, { timeout: ctx.action.maxWait });
+      
+      // For search boxes, ensure focus remains and wait for suggestions
+      const isSearchInput = await elementHandle.evaluate((el) => {
+        // Explicitly cast to Element type which has getAttribute and closest methods
+        const element = el as Element;
+        
+        return element.getAttribute('type') === 'search' || 
+               element.getAttribute('name')?.includes('search') ||
+               (element.getAttribute('placeholder')?.toLowerCase()?.includes('search') || false) ||
+               element.closest('form[role="search"]') !== null;
+      }).catch(() => false);
+      
+      if (isSearchInput) {
+        // Explicitly click again to ensure focus is maintained
+        await elementHandle.click({ timeout: ctx.action.maxWait / 2 });
+        
+        // Wait briefly for suggestions to appear (they're often in dropdown menus)
+        logger.debug('Waiting for search suggestions to appear...');
+        await ctx.page.waitForTimeout(300);
+      }
+      
+      const verified = await verifyAction(ctx.page, ctx.action);
       if (!verified) throw new Error("Action verification failed after input");
       
       ctx.lastActionSuccess = true;
@@ -731,7 +755,7 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
     }
   },
   wait: async (ctx: GraphContext) => {
-    const waitTime = ctx.action?.maxWait || 430000;
+    const waitTime = ctx.action?.maxWait || 3000;
 
     logger.browser.action('wait', {
       duration: waitTime
@@ -890,8 +914,7 @@ async function runStateMachine(ctx: GraphContext): Promise<void> {
 // Exported function to run the entire automation graph.
 export async function runGraph(): Promise<void> {
   // Prompt the user for their automation goal
-  //const userGoal = await promptUser("Please enter your goal for this automation: ");
-  const userGoal = "go to https://duckduckgo.com/ and search the word 'marco-o1 github' via the search bar --> There's a button () --> Click on it --> Tell me what it's about via sendHumanMessage action once you understand the page content.";
+  const userGoal = await promptUser("Please enter your goal for this automation: ");
   
   // Initialize context with user goal and history
   const ctx: GraphContext = { 

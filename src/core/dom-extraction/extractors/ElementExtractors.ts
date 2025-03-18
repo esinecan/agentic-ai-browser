@@ -31,15 +31,37 @@ export class ButtonExtractor implements DOMExtractorStrategy {
             if (type) attributes.type = type;
             if (name) attributes.name = name;
             
+            // Get class names safely - handle both string and SVGAnimatedString
+            let classNames;
+            if (typeof buttonElement.className === 'string') {
+              classNames = buttonElement.className.split(' ').filter(Boolean);
+            } else if (buttonElement.className && typeof buttonElement.className === 'object') {
+              // Type assertion to access SVGAnimatedString properties
+              const svgClassName = buttonElement.className as unknown as { baseVal?: string };
+              if (svgClassName.baseVal) {
+                classNames = svgClassName.baseVal.split(' ').filter(Boolean);
+              } else {
+                const classAttr = buttonElement.getAttribute('class');
+                classNames = classAttr ? classAttr.split(' ').filter(Boolean) : undefined;
+              }
+            } else {
+              // Fallback to getAttribute for any other cases
+              const classAttr = buttonElement.getAttribute('class');
+              classNames = classAttr ? classAttr.split(' ').filter(Boolean) : undefined;
+            }
+            
             return {
               tagName: buttonElement.tagName.toLowerCase(),
               id: buttonElement.id || undefined,
-              classes: buttonElement.className ? buttonElement.className.split(' ').filter(Boolean) : undefined,
+              classes: classNames,
               text: text.length > 100 ? text.substring(0, 100) + '...' : text,
               attributes,
               isVisible: window.getComputedStyle(buttonElement).display !== 'none',
               role: buttonElement.getAttribute('role') || 'button',
-              selector: buttonElement.id ? `#${buttonElement.id}` : (buttonElement.className ? `.${buttonElement.className.replace(/\s+/g, '.')}` : buttonElement.tagName.toLowerCase())
+              selector: buttonElement.id ? `#${buttonElement.id}` : 
+                       (classNames && classNames.length ? 
+                        `.${classNames.join('.')}` : 
+                        buttonElement.tagName.toLowerCase())
             };
           })
           .filter(button => button.text); // Only keep buttons with text content
@@ -145,7 +167,12 @@ export class LinkExtractor implements DOMExtractorStrategy {
               attributes,
               isVisible: window.getComputedStyle(linkElement).display !== 'none',
               href, // Store as a direct property for easier access
-              selector: linkElement.id ? `#${linkElement.id}` : (linkElement.innerText ? `a:contains("${linkElement.innerText.substring(0, 20)}")` : 'a')
+              selector: linkElement.id ? 
+                `#${linkElement.id}` : 
+                (attributes.href && attributes.href !== '#' ? 
+                  `a[href="${attributes.href}"]` : 
+                  (linkElement.innerText ? 
+                    `a:contains("${linkElement.innerText.substring(0, 20)}")` : 'a'))
             };
           })
           .filter(link => link.text || link.href); // Only keep links with text or href

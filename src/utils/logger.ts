@@ -22,7 +22,7 @@ const LOG_LEVELS = {
 } as const;
 
 type LogLevel = keyof typeof LOG_LEVELS;
-let currentLogLevel: number = LOG_LEVELS.INFO; // Default log level
+let currentLogLevel: number = LOG_LEVELS.DEBUG; // Default log level
 
 // Utility to format objects for logging
 function formatData(data: any): string {
