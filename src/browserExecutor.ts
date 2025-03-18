@@ -213,11 +213,13 @@ export async function getElement(
         if (elements.length === 0) return { found: false, count: 0 };
         
         const firstElement = elements[0] as HTMLElement;
+        const style = window.getComputedStyle(firstElement);
         return { 
           found: true, 
           count: elements.length,
-          isVisible: !!(firstElement.offsetWidth || firstElement.offsetHeight || 
-                      firstElement.getClientRects().length),
+          isVisible: !!(style.display !== "none" && 
+                      style.visibility !== "hidden" &&
+                      (firstElement.offsetParent !== null || style.position === "fixed")),
           tagName: firstElement.tagName,
           text: firstElement.textContent?.substring(0, 100)
         };
