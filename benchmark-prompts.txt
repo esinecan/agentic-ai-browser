@@ -1,0 +1,20 @@
+- Go to https://www.nasa.gov. Look at the homepage first, then the "News" section, then the "recent publications" section. Create a one paragraph long briefing of the most interesting items and send this to user via sendHumanMessage.
+
+- Head to https://downforeveryoneorjustme.com. Enter "https://www.reddit.com" and check if it’s down or just slow. If it’s down, tell the user. If it’s up, tell them it's because they must have something wrong in the head that they can't access it. Recommend seeking medical advice.
+
+- Navigate to https://genius.com and search for "Bohemian Rhapsody". if any of the search results point you to lyrics, click on it. Scroll down and grab the first few lines. If lyrics aren’t available, let the user know.
+
+
+- Visit https://www.gsmarena.com. Search for "iPhone 15 Pro" and "Samsung Galaxy S24 Ultra." Open both pages. Compare battery life & camera specs. Summarize which one seems better based on those two factors.
+
+
+- Go to https://www.godaddy.com and search for "coolprojectidea.com" and see if it’s taken. If it is, try alternatives like appending"2025" or "AI" to the name, or you know, create variations until you find a usable one.
+
+- Find a list of countries by searching on www.duckduckgo.com and pick a random country and tell the user its capital but from your own memory. If they want more info, offer to provide its population and time zone. but this time population info must be current. so go to duckduckgo again and search that country. Find a link to wiki or some other encyclopedic source and click. Tell the user the current population.
+
+- Visit https://www.reddit.com/r/memes. Look at the top post of the day. Describe the meme format and whether it’s a trending joke or a classic template.
+
+- Take the sentence: "Artificial intelligence is changing the world in ways we never imagined."
+Go to https://www.grammarly.com/plagiarism-checker and paste it in. If it’s flagged as unoriginal, find where it’s from and tell the user.
+
+- Go to https://www.ups.com and enter tracking number "1Z999AA10123456784". If it’s in transit, tell the user the estimated delivery date. Otherwise tell what you find out.

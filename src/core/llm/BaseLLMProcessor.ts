@@ -2,6 +2,9 @@ import { LLMProcessor } from "./llmProcessor.js";
 import { GraphContext } from "../../browserExecutor.js";
 import { ActionExtractor } from "../../core/action-handling/ActionExtractor.js";
 import logger from '../../utils/logger.js';
+import dotenv from "dotenv";
+dotenv.config();
+const UNIVERSAL_SUBMIT_SELECTOR = process.env.UNIVERSAL_SUBMIT_SELECTOR || "";
 
 export type ConversationMessage = {
   role: "system" | "user" | "assistant";
@@ -13,23 +16,24 @@ export type ConversationMessage = {
  */
 export abstract class BaseLLMProcessor implements LLMProcessor {
   // Shared system prompt for all LLM processors
-  protected static readonly SYSTEM_PROMPT = `
-### You are an automation agent controlling a web browser.
-### Your only goal is to execute web automation tasks precisely.
-### You can return ONLY ONE of the 5 valid action types per response:
-
-- Click: { "type": "click", "element": "selector", "description": "description" }
-- Input: { "type": "input", "element": "selector", "value": "text" }
-- Navigate: { "type": "navigate", "value": "url" }
-- Wait: { "type": "wait", "maxWait": milliseconds }
-- SendHumanMessage: { "type": "sendHumanMessage", "question": "This is how you communicate with human user." }
-
----
-# EXAMPLES:
-1. If asked to navigate: { "type": "navigate", "value": "https://example.com" }
-2. If asked to click: { "type": "click", "element": "#submit-button" }
-3. If asked to summarize, use sendHumanMessage: { "type": "sendHumanMessage", "question": "Hello I am AI assistant. What are you up to you fithy flesh monkey you?" }
-`;
+  protected static readonly SYSTEM_PROMPT =  `
+  ### You are an automation agent controlling a web browser.
+  ### Your only goal is to execute web automation tasks precisely.
+  ### You can return ONLY ONE of the 5 valid action types per response:
+  
+  - Click: { "type": "click", "element": "selector", "description": "description" }
+  - Input: { "type": "input", "element": "selector", "value": "text" }
+  - Navigate: { "type": "navigate", "value": "url" }
+  - Wait: { "type": "wait", "maxWait": milliseconds }
+  - SendHumanMessage: { "type": "sendHumanMessage", "question": "This is how you communicate with human user." }
+  
+  ---
+  # EXAMPLES:
+  1. If asked to navigate: { "type": "navigate", "value": "https://example.com" }
+  2. If asked to click: { "type": "click", "element": "#submit-button" }
+  3. If asked to summarize, use sendHumanMessage: { "type": "sendHumanMessage", "question": "Hello I am AI assistant. What are you up to you fithy flesh monkey you?" }
+  4. If you can't find a button for submitting a input: { "type": "click", "element": "${UNIVERSAL_SUBMIT_SELECTOR}" "description":"If you send click with ${UNIVERSAL_SUBMIT_SELECTOR || "empty string"} is same as pressing enter on keyboard."}
+  `;
   
   // Conversation tracking
   protected lastContext: ConversationMessage[] = [];
@@ -118,7 +122,6 @@ THIS IS THE SIMPLIFIED HTML CONTENT OF THE PAGE, IN LIEU OF YOU "SEEING" THE PAG
 URL: ${(state as any).url}
 TITLE: ${(state as any).title}
 
-PAGE CONTENT:
 ${context.pageContent}
 ---
 ---

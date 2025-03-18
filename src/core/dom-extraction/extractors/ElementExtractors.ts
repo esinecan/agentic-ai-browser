@@ -1,51 +1,82 @@
 import { Page } from 'playwright';
-import { DOMElement, DOMExtractionConfig, DOMExtractorRegistry, DOMExtractorStrategy } from '../DOMExtractor.js';
+import { DOMElement, DOMExtractionConfig, DOMExtractorStrategy } from '../DOMExtractor.js';
+import { BaseExtractor } from '../BaseExtractor.js';
 import logger from '../../../utils/logger.js';
+import { visibilityHelperScript } from '../utils/visibilityHelper.js';
 
-export class ButtonExtractor implements DOMExtractorStrategy {
-  name = 'buttons';
-  selector = 'button, [role="button"], input[type="button"], input[type="submit"], a.btn, a[href^="javascript:"], [class*="button"]';
-  
-  isApplicable(config: DOMExtractionConfig): boolean {
-    return true; // Always applicable
+export class ButtonExtractor extends BaseExtractor implements DOMExtractorStrategy {
+  constructor() {
+    super('buttons', 'button, [role="button"], input[type="button"], input[type="submit"], a.btn, a[href^="javascript:"], [class*="button"]');
   }
   
   async extract(page: Page, config: DOMExtractionConfig): Promise<DOMElement[]> {
     try {
       logger.debug('Running ButtonExtractor...');
       
-      const buttons = await page.evaluate(() => {
-        // More robust selector that finds more types of buttons
-        const elements = document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"], a.btn, a[href^="javascript:"], [class*="button"]');
-        console.log(`Found ${elements.length} button elements`);
+      // First inject the visibility helper script separately
+      await page.evaluate(visibilityHelperScript);
+      
+      // Then run the extraction with proper typing
+      const buttons = await page.evaluate((selector) => {
+        const elements = document.querySelectorAll(selector);
+        
+        // Use the injected function directly with proper casting
+        function isElementVisible(element: Element): boolean {
+          if (!element) return false;
+          
+          try {
+            const style = window.getComputedStyle(element);
+            const htmlElement = element as HTMLElement;
+            return style.display !== 'none' && 
+                  style.visibility !== 'hidden' && 
+                  (htmlElement.offsetParent !== null || style.position === 'fixed');
+          } catch (e) {
+            console.error('Error checking visibility:', e);
+            return false;
+          }
+        }
         
         return Array.from(elements)
           .map(el => {
             const buttonElement = el as HTMLElement;
-            const text = buttonElement.innerText?.trim() || buttonElement.getAttribute('value') || buttonElement.getAttribute('aria-label') || '';
             
-            // Create attributes object with only defined values converted to strings
+            const text = buttonElement.textContent?.trim() || 
+                        buttonElement.getAttribute('value') || 
+                        buttonElement.getAttribute('aria-label') || '';
+            
             const attributes: Record<string, string> = {};
             const type = buttonElement.getAttribute('type');
             const name = buttonElement.getAttribute('name');
-            if (type) attributes.type = type;
-            if (name) attributes.name = name;
+            
+            if (type) attributes['type'] = type;
+            if (name) attributes['name'] = name;
+            
+            let classNames: string[] = [];
+            if (buttonElement.classList) {
+              classNames = Array.from(buttonElement.classList);
+            } else {
+              const className = buttonElement.getAttribute('class');
+              if (className) {
+                classNames = className.split(' ').filter(Boolean);
+              }
+            }
             
             return {
               tagName: buttonElement.tagName.toLowerCase(),
               id: buttonElement.id || undefined,
-              classes: buttonElement.className ? buttonElement.className.split(' ').filter(Boolean) : undefined,
-              text: text.length > 100 ? text.substring(0, 100) + '...' : text,
+              classes: classNames,
+              text,
               attributes,
-              isVisible: window.getComputedStyle(buttonElement).display !== 'none',
+              isVisible: isElementVisible(buttonElement),
               role: buttonElement.getAttribute('role') || 'button',
-              selector: buttonElement.id ? `#${buttonElement.id}` : (buttonElement.className ? `.${buttonElement.className.replace(/\s+/g, '.')}` : buttonElement.tagName.toLowerCase())
+              selector: buttonElement.id ? `#${buttonElement.id}` : 
+                      (classNames.length > 0 ? `.${classNames[0]}` : 
+                      buttonElement.tagName.toLowerCase())
             };
           })
-          .filter(button => button.text); // Only keep buttons with text content
-      });
+          .filter(button => button.text);
+      }, this.selector);
       
-      logger.debug(`ButtonExtractor found ${buttons.length} buttons`);
       return buttons;
     } catch (error) {
       logger.error('Error extracting buttons', { error });
@@ -54,48 +85,66 @@ export class ButtonExtractor implements DOMExtractorStrategy {
   }
 }
 
-export class InputExtractor implements DOMExtractorStrategy {
-  name = 'inputs';
-  selector = 'input:not([type="hidden"]):not([type="button"]):not([type="submit"]), textarea, select';
-  
-  isApplicable(config: DOMExtractionConfig): boolean {
-    return true; // Always applicable
+export class InputExtractor extends BaseExtractor implements DOMExtractorStrategy {
+  constructor() {
+    super('inputs', 'input:not([type="hidden"]):not([type="button"]):not([type="submit"]), textarea, select');
   }
   
   async extract(page: Page, config: DOMExtractionConfig): Promise<DOMElement[]> {
     try {
       logger.debug('Running InputExtractor...');
       
-      const inputs = await page.evaluate(() => {
-        const elements = document.querySelectorAll('input:not([type="hidden"]):not([type="button"]):not([type="submit"]), textarea, select');
-        console.log(`Found ${elements.length} input elements`);
+      await page.evaluate(visibilityHelperScript);
+      
+      const inputs = await page.evaluate((selector) => {
+        function isElementVisible(element: Element): boolean {
+          if (!element) return false;
+          
+          try {
+            const style = window.getComputedStyle(element);
+            const htmlElement = element as HTMLElement;
+            return style.display !== 'none' && 
+                  style.visibility !== 'hidden' && 
+                  (htmlElement.offsetParent !== null || style.position === 'fixed');
+          } catch (e) {
+            console.error('Error checking visibility:', e);
+            return false;
+          }
+        }
         
-        return Array.from(elements)
+        return Array.from(document.querySelectorAll(selector))
           .map(el => {
-            const inputElement = el as HTMLElement;
-            const inputType = inputElement.getAttribute('type') || inputElement.tagName.toLowerCase();
+            const inputElement = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
             
-            // Create attributes object with only defined values converted to strings
             const attributes: Record<string, string> = {};
-            attributes.type = inputType; // This is guaranteed to be non-null by defaulting to tagName
-            
+            const type = inputElement.getAttribute('type');
             const name = inputElement.getAttribute('name');
             const placeholder = inputElement.getAttribute('placeholder');
-            if (name) attributes.name = name;
-            if (placeholder) attributes.placeholder = placeholder;
+            
+            if (type) attributes['type'] = type;
+            if (name) attributes['name'] = name;
+            if (placeholder) attributes['placeholder'] = placeholder;
+            
+            let label = '';
+            if (inputElement.id) {
+              const labelEl = document.querySelector(`label[for="${inputElement.id}"]`);
+              if (labelEl) label = labelEl.textContent?.trim() || '';
+            }
             
             return {
               tagName: inputElement.tagName.toLowerCase(),
               id: inputElement.id || undefined,
-              classes: inputElement.className ? inputElement.className.split(' ').filter(Boolean) : undefined,
+              type: type || inputElement.tagName.toLowerCase(),
+              name: name || undefined,
+              placeholder: placeholder || undefined,
+              label,
               attributes,
-              isVisible: window.getComputedStyle(inputElement).display !== 'none',
-              selector: inputElement.id ? `#${inputElement.id}` : (inputElement.getAttribute('name') ? `[name="${inputElement.getAttribute('name')}"]` : inputElement.tagName.toLowerCase())
+              isVisible: isElementVisible(inputElement),
+              value: inputElement.value || undefined
             };
           });
-      });
+      }, this.selector);
       
-      logger.debug(`InputExtractor found ${inputs.length} inputs`);
       return inputs;
     } catch (error) {
       logger.error('Error extracting inputs', { error });
@@ -104,54 +153,53 @@ export class InputExtractor implements DOMExtractorStrategy {
   }
 }
 
-export class LinkExtractor implements DOMExtractorStrategy {
-  name = 'links';
-  selector = 'a[href]:not([href^="javascript:"]):not([href="#"])';
-  
-  isApplicable(config: DOMExtractionConfig): boolean {
-    return true; // Always applicable
+export class LinkExtractor extends BaseExtractor implements DOMExtractorStrategy {
+  constructor() {
+    super('links', 'a[href]:not([href^="#"]):not([href^="javascript:"]):not([href^="mailto:"])');
   }
   
   async extract(page: Page, config: DOMExtractionConfig): Promise<DOMElement[]> {
     try {
       logger.debug('Running LinkExtractor...');
       
-      const links = await page.evaluate(() => {
-        const elements = document.querySelectorAll('a[href]:not([href^="javascript:"]):not([href="#"])');
-        console.log(`Found ${elements.length} link elements`);
+      await page.evaluate(visibilityHelperScript);
+      
+      const links = await page.evaluate((selector) => {
+        function isElementVisible(element: Element): boolean {
+          if (!element) return false;
+          
+          try {
+            const style = window.getComputedStyle(element);
+            const htmlElement = element as HTMLElement;
+            return style.display !== 'none' && 
+                  style.visibility !== 'hidden' && 
+                  (htmlElement.offsetParent !== null || style.position === 'fixed');
+          } catch (e) {
+            console.error('Error checking visibility:', e);
+            return false;
+          }
+        }
         
-        return Array.from(elements)
-          .slice(0, 50) // Limit to 50 links to prevent performance issues
+        return Array.from(document.querySelectorAll(selector))
           .map(el => {
             const linkElement = el as HTMLAnchorElement;
-            const text = linkElement.innerText?.trim() || linkElement.getAttribute('aria-label') || '';
-            const href = linkElement.href || linkElement.getAttribute('href') || '#';
-            
-            // Create attributes object with only defined values converted to strings
-            const attributes: Record<string, string> = {
-              href: linkElement.getAttribute('href') || '#'
-            };
-            
-            const title = linkElement.getAttribute('title');
-            const ariaLabel = linkElement.getAttribute('aria-label');
-            if (title) attributes.title = title;
-            if (ariaLabel) attributes['aria-label'] = ariaLabel;
+            const text = linkElement.textContent?.trim() || '';
+            const href = linkElement.href || '';
             
             return {
               tagName: 'a',
-              id: linkElement.id || undefined,
-              classes: linkElement.className ? linkElement.className.split(' ').filter(Boolean) : undefined,
-              text: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
-              attributes,
-              isVisible: window.getComputedStyle(linkElement).display !== 'none',
-              href, // Store as a direct property for easier access
-              selector: linkElement.id ? `#${linkElement.id}` : (linkElement.innerText ? `a:contains("${linkElement.innerText.substring(0, 20)}")` : 'a')
+              text: text.length > 100 ? text.substring(0, 100) + '...' : text,
+              href,
+              isVisible: isElementVisible(linkElement),
+              isExternal: linkElement.hostname !== window.location.hostname,
+              attributes: {
+                href
+              }
             };
           })
-          .filter(link => link.text || link.href); // Only keep links with text or href
-      });
+          .filter(link => link.text && link.href);
+      }, this.selector);
       
-      logger.debug(`LinkExtractor found ${links.length} links`);
       return links;
     } catch (error) {
       logger.error('Error extracting links', { error });
@@ -160,36 +208,48 @@ export class LinkExtractor implements DOMExtractorStrategy {
   }
 }
 
-export class LandmarkExtractor implements DOMExtractorStrategy {
-  name = 'landmarks';
-  selector = '[role="main"], [role="navigation"], [role="search"], main, nav, article';
-  
-  isApplicable(config: DOMExtractionConfig): boolean {
-    return true; // Always applicable
+export class LandmarkExtractor extends BaseExtractor implements DOMExtractorStrategy {
+  constructor() {
+    super('landmarks', '[role="main"], [role="navigation"], [role="search"], main, nav, article');
   }
   
   async extract(page: Page, config: DOMExtractionConfig): Promise<DOMElement[]> {
     try {
       logger.debug('Running LandmarkExtractor...');
       
-      const landmarks = await page.evaluate(() => {
-        const elements = document.querySelectorAll('[role="main"], [role="navigation"], [role="search"], main, nav, article');
-        console.log(`Found ${elements.length} landmark elements`);
+      await page.evaluate(visibilityHelperScript);
+      
+      const landmarks = await page.evaluate((selector) => {
+        function isElementVisible(element: Element): boolean {
+          if (!element) return false;
+          
+          try {
+            const style = window.getComputedStyle(element);
+            const htmlElement = element as HTMLElement;
+            return style.display !== 'none' && 
+                  style.visibility !== 'hidden' && 
+                  (htmlElement.offsetParent !== null || style.position === 'fixed');
+          } catch (e) {
+            console.error('Error checking visibility:', e);
+            return false;
+          }
+        }
         
-        return Array.from(elements)
+        return Array.from(document.querySelectorAll(selector))
           .map(el => {
-            const landmarkElement = el as HTMLElement;
+            const element = el as HTMLElement;
+            const role = element.getAttribute('role') || element.tagName.toLowerCase();
+            
             return {
-              tagName: landmarkElement.tagName.toLowerCase(),
-              role: landmarkElement.getAttribute('role') || landmarkElement.tagName.toLowerCase(),
-              text: landmarkElement.innerText?.substring(0, 300)?.trim() || '',
-              id: landmarkElement.id || undefined,
-              selector: landmarkElement.id ? `#${landmarkElement.id}` : (landmarkElement.getAttribute('role') ? `[role="${landmarkElement.getAttribute('role')}"]` : landmarkElement.tagName.toLowerCase())
+              tagName: element.tagName.toLowerCase(),
+              role,
+              id: element.id || undefined,
+              isVisible: isElementVisible(element),
+              content: element.textContent?.trim().substring(0, 150) || ''
             };
           });
-      });
+      }, this.selector);
       
-      logger.debug(`LandmarkExtractor found ${landmarks.length} landmarks`);
       return landmarks;
     } catch (error) {
       logger.error('Error extracting landmarks', { error });
@@ -197,9 +257,3 @@ export class LandmarkExtractor implements DOMExtractorStrategy {
     }
   }
 }
-
-// Register extractors
-DOMExtractorRegistry.register(new ButtonExtractor());
-DOMExtractorRegistry.register(new InputExtractor());
-DOMExtractorRegistry.register(new LinkExtractor());
-DOMExtractorRegistry.register(new LandmarkExtractor());

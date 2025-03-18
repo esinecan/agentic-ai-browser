@@ -41,6 +41,22 @@ export interface DOMSnapshot {
   content?: {
     [key: string]: any;
   };
+  // Add diagnostic information for debugging purposes
+  _diagnostic?: {
+    extractorsRun: string[];
+    extractorResults: {
+      [extractorName: string]: {
+        duration?: number;
+        success?: boolean;
+        resultType?: string;
+        resultSize?: number | string;
+        error?: string;
+        stack?: string;
+        selector?: string;
+      };
+    };
+    extractionTime: number;
+  };
 }
 
 // Core extractor interface

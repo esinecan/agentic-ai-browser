@@ -24,6 +24,17 @@ export class PageAnalyzer {
     const startTime = Date.now();
     const mergedConfig = { ...this.defaultConfig, ...config };
     
+    // Capture original HTML before extraction for debug purposes
+    const htmlSnapshot = await page.content().catch(err => {
+      logger.error('Failed to capture HTML snapshot', { error: err });
+      return '<error capturing HTML>';
+    });
+    
+    logger.debug('Original HTML snapshot', { 
+      htmlSnippet: htmlSnapshot.substring(0, 500) + '...',
+      fullLength: htmlSnapshot.length
+    });
+    
     // Add this logging to verify extractors are registered
     const allExtractors = DOMExtractorRegistry.getAll();
     logger.debug(`Available extractors in registry: ${allExtractors.length}`, {
@@ -34,7 +45,10 @@ export class PageAnalyzer {
     const extractors = DOMExtractorRegistry.getApplicable(mergedConfig);
     
     if (!extractors || extractors.length === 0) {
-      logger.warn('No applicable DOM extractors found', { config: mergedConfig });
+      logger.warn('No applicable DOM extractors found', { 
+        config: mergedConfig,
+        registeredExtractors: allExtractors.map(e => e.name)
+      });
     }
     
     logger.debug(`Running ${extractors.length} DOM extractors`, {
@@ -45,7 +59,7 @@ export class PageAnalyzer {
     // Prepare result with properly initialized arrays
     const snapshot: DOMSnapshot = {
       url: page.url(),
-      title: await page.title().catch(() => ''),
+      title: await page.title().catch(() => 'Error getting title'),
       timestamp: Date.now(),
       elements: {
         buttons: [],
@@ -54,18 +68,41 @@ export class PageAnalyzer {
         landmarks: []
       },
       content: {},
+      // Add diagnostic information
+      _diagnostic: {
+        extractorsRun: extractors.map(e => e.name),
+        extractorResults: {},
+        extractionTime: 0
+      }
     };
     
     // Process each extractor individually with proper error handling
     for (const extractor of extractors) {
       try {
+        const extractorStartTime = Date.now();
         logger.debug(`Running extractor: ${extractor.name}`);
+        
         const extractorTimeout = setTimeout(() => {
           logger.warn(`Extractor ${extractor.name} is taking too long`);
         }, 4000); // Warning only
         
         const result = await extractor.extract(page, mergedConfig);
         clearTimeout(extractorTimeout);
+        
+        const extractorDuration = Date.now() - extractorStartTime;
+        snapshot._diagnostic!.extractorResults[extractor.name] = {
+          duration: extractorDuration,
+          success: !!result,
+          resultType: result ? (Array.isArray(result) ? 'array' : typeof result) : 'none',
+          resultSize: result ? (Array.isArray(result) ? result.length : 
+                              (typeof result === 'string' ? result.length : 'n/a')) : 0
+        };
+        
+        logger.debug(`Extractor ${extractor.name} completed in ${extractorDuration}ms`, {
+          resultType: result ? (Array.isArray(result) ? 'array' : typeof result) : 'none',
+          resultSize: result ? (Array.isArray(result) ? result.length : 
+                             (typeof result === 'string' ? result.length : 'n/a')) : 0
+        });
         
         // Explicitly check result type and assign to appropriate category
         if (result && Array.isArray(result)) {
@@ -80,15 +117,72 @@ export class PageAnalyzer {
             snapshot.content[extractor.name] = result;
           }
         } else {
-          logger.warn(`Empty or invalid result from ${extractor.name} extractor`);
+          // Handle non-array results (strings, objects, etc.)
+          if (!snapshot.content) snapshot.content = {};
+          snapshot.content[extractor.name] = result;
+          
+          if (!result) {
+            logger.warn(`Empty or invalid result from ${extractor.name} extractor`);
+          }
         }
       } catch (error) {
-        logger.error(`Error in ${extractor.name} extractor`, { error });
+        logger.error(`Error in ${extractor.name} extractor`, { 
+          error, 
+          extractorName: extractor.name,
+          selector: extractor.selector
+        });
+        
+        // Capture diagnostic info
+        if (snapshot._diagnostic?.extractorResults) {
+          snapshot._diagnostic.extractorResults[extractor.name] = {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : undefined,
+            selector: extractor.selector
+          };
+        }
+      }
+    }
+    
+    const totalDuration = Date.now() - startTime;
+    snapshot._diagnostic!.extractionTime = totalDuration;
+    
+    // Check for empty results
+    if (snapshot.elements && 
+        (!snapshot.elements.buttons?.length && 
+         !snapshot.elements.inputs?.length && 
+         !snapshot.elements.links?.length)) {
+      
+      logger.warn('No interactive elements extracted', {
+        url: page.url(),
+        title: snapshot.title,
+        possibleIssue: 'DOM might be in iframe, dynamic loading, or heavy JS framework'
+      });
+      
+      // Try to diagnose the issue
+      try {
+        const iframeCount = await page.evaluate(() => document.querySelectorAll('iframe').length);
+        const shadowRoots = await page.evaluate(() => {
+          return Array.from(document.querySelectorAll('*'))
+            .filter(el => el.shadowRoot)
+            .map(el => ({
+              tag: el.tagName,
+              id: el.id || undefined,
+              class: el.className || undefined
+            }));
+        });
+        
+        logger.debug('DOM structure diagnostics', {
+          iframeCount,
+          shadowRoots: shadowRoots.length ? shadowRoots : 'none',
+          bodyChildren: await page.evaluate(() => document.body?.childElementCount || 0)
+        });
+      } catch (diagError) {
+        logger.error('Error during DOM diagnostics', { error: diagError });
       }
     }
     
     logger.debug('DOM extraction completed', {
-      duration: Date.now() - startTime,
+      duration: totalDuration,
       extractorsRun: extractors.length,
       elementsExtracted: snapshot.elements ? Object.values(snapshot.elements)
         .reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0) : 0,

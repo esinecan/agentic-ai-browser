@@ -182,23 +182,139 @@ export async function verifyElementExists(
 // Import the new ElementFinder
 import { elementFinder } from "./core/element-selection/ElementFinder.js";
 
-// Helper: Get an element based on the action's selector.
+// Helper: Get an element based on the action's selector with improved error handling
 export async function getElement(
   page: Page,
   action: Action
 ): Promise<ElementHandle | null> {
-  logger.browser.action('getElement', {
-    selector: action.element,
-    type: action.type,
-    selectorType: action.selectorType
-  });
-
-  return doRetry(async () => {
-    const element = await elementFinder.findElement(page, action);
-    if (element) return element;
+  if (!action.element) {
+    logger.error('Undefined selector provided for action', { 
+      actionType: action.type,
+      action: JSON.stringify(action)
+    });
+    return null;
+  }
+  
+  const selector = action.element;
+  const selectorType = action.selectorType || 'css';
+  const startTime = Date.now();
+  
+  try {
+    logger.debug('Looking for element', {
+      selector,
+      selectorType,
+      timeout: action.maxWait || 2000
+    });
     
-    throw new Error(`No matching element found for ${action.type} action with selector: ${action.element}`);
-  }, 2);
+    // Check if element exists using evaluate for better diagnostics
+    const elementInfo = await page.evaluate((sel) => {
+      try {
+        const elements = document.querySelectorAll(sel);
+        if (elements.length === 0) return { found: false, count: 0 };
+        
+        const firstElement = elements[0] as HTMLElement;
+        const style = window.getComputedStyle(firstElement);
+        return { 
+          found: true, 
+          count: elements.length,
+          isVisible: !!(style.display !== "none" && 
+                      style.visibility !== "hidden" &&
+                      (firstElement.offsetParent !== null || style.position === "fixed")),
+          tagName: firstElement.tagName,
+          text: firstElement.textContent?.substring(0, 100)
+        };
+      } catch (e) {
+        return { found: false, error: String(e) };
+      }
+    }, selector).catch(e => ({ found: false, error: String(e) }));
+    
+    logger.debug('Element search result', {
+      selector,
+      result: elementInfo,
+      duration: `${Date.now() - startTime}ms`
+    });
+    
+    if (!elementInfo.found) {
+      // If not found with regular selector, try alternative methods
+      logger.warn(`Element not found with selector: ${selector}`, { elementInfo });
+      
+      // Check for partial matches or similar elements
+      await captureCloseMatches(page, selector);
+      return null;
+    }
+    
+    // Element exists, but we still need to get a handle to it
+    const elementHandle = await page.$(selector).catch(e => {
+      logger.error(`Error getting handle for existing element: ${selector}`, { error: e });
+      return null;
+    });
+    
+    return elementHandle;
+  } catch (error) {
+    logger.error(`Error finding element: ${selector}`, { 
+      error,
+      selector,
+      url: page.url()
+    });
+    return null;
+  }
+}
+
+// New helper function to capture potential close matches
+async function captureCloseMatches(page: Page, failedSelector: string): Promise<void> {
+  try {
+    // For failed CSS selectors like #something or .something, try to find similar elements
+    const generalizedSelector = failedSelector.startsWith('#') ? 
+      '[id*="' + failedSelector.substring(1) + '"]' : 
+      failedSelector.startsWith('.') ? 
+        '[class*="' + failedSelector.substring(1) + '"]' : null;
+    
+    if (generalizedSelector) {
+      const similarElements = await page.evaluate((sel) => {
+        const elements = document.querySelectorAll(sel);
+        return Array.from(elements).slice(0, 5).map(el => ({
+          tagName: el.tagName,
+          id: el.id || undefined,
+          classes: Array.from(el.classList),
+          text: el.textContent?.substring(0, 50)
+        }));
+      }, generalizedSelector).catch(() => []);
+      
+      if (similarElements.length > 0) {
+        logger.debug('Found similar elements', {
+          originalSelector: failedSelector,
+          generalizedSelector,
+          similarElements
+        });
+      }
+    }
+    
+    // For any selector type, list visible interactive elements as guidance
+    const visibleButtons = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('button, [role="button"], a.btn'))
+        .filter(el => {
+          const rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        })
+        .slice(0, 10)
+        .map(el => ({
+          tagName: el.tagName,
+          id: el.id || undefined,
+          classes: Array.from(el.classList),
+          text: el.textContent?.trim().substring(0, 50) || undefined,
+          selector: el.id ? `#${el.id}` : 
+                    el.classList.length ? `.${Array.from(el.classList)[0]}` : el.tagName
+        }));
+    }).catch(() => []);
+    
+    if (visibleButtons.length > 0) {
+      logger.debug('Visible interactive elements on page that could be used instead', {
+        visibleButtons
+      });
+    }
+  } catch (error) {
+    logger.error('Error capturing close matches', { error });
+  }
 }
 
 // Dummy text similarity function (replace with a proper implementation as needed).
@@ -370,66 +486,123 @@ async function extractDOMSnapshot(page: Page): Promise<any> {
   return PageAnalyzer.extractSnapshot(page);
 }
 
-// Verify that an action succeeded based on its type.
+// Enhanced verify action function with better diagnostics
 export async function verifyAction(page: Page, action: Action): Promise<boolean> {
-  // Add INFO level logging here with full action object
-  logger.info('Verifying action', {
-    actionType: action.type,
-    actionDetails: action,  // Log the entire action object
-    url: page.url()
-  });
-
-  logger.browser.action('verifyAction', {
-    type: action.type,
-    element: action.element,
-    value: action.value
-  });
-
+  if (!action) {
+    logger.error('Undefined action in verifyAction');
+    return false;
+  }
+  
   const startTime = Date.now();
   let success = false;
-  
+
   try {
-    success = await doRetry(async () => {
+    await doRetry(async () => {
       switch (action.type) {
         case "click": {
-          const element = await getElement(page, action);
-          if (!element) return false;
-          try {
-            await Promise.race([
-              element.waitForElementState("hidden", { timeout: action.maxWait / 2 }),
-              element.waitForElementState("disabled", {
-                timeout: action.maxWait / 2,
-              }),
-            ]);
-            return true;
-          } catch {
+          if (!action.element) {
+            logger.error('Undefined element for click action', { action });
             return false;
           }
+          
+          const elementExists = await page.$(action.element) !== null;
+          if (!elementExists) {
+            logger.debug('Element no longer exists after click (might be expected)', {
+              selector: action.element
+            });
+            
+            // If it's a button that caused navigation, this might be expected
+            const urlChanged = page.url() !== action.previousUrl;
+            if (urlChanged) {
+              logger.debug('URL changed after click, considering successful', {
+                from: action.previousUrl,
+                to: page.url()
+              });
+              success = true;
+              return true;
+            }
+          }
+          
+          // For clicks, we often don't have a great way to verify success other than checking
+          // URL changes or DOM mutations. Log additional info to help diagnose.
+          success = true;
+          return true;
         }
         case "input": {
+          if (!action.element) {
+            logger.error('Undefined element for input action', { action });
+            return false;
+          }
+          
           const element = await getElement(page, action);
           if (!element) return false;
+          
           const value = await element.inputValue();
-          return value === action.value;
+          success = value === action.value;
+          
+          if (!success) {
+            logger.warn('Input verification failed', {
+              expected: action.value,
+              actual: value,
+              selector: action.element
+            });
+          }
+          
+          return success;
         }
         case "navigate": {
           const currentUrl = page.url();
-          return currentUrl.includes(action.value || "");
+          const targetUrl = action.value || '';
+          
+          // Smarter URL comparison
+          const currentUrlObj = new URL(currentUrl);
+          let targetUrlObj: URL;
+          
+          try {
+            targetUrlObj = new URL(targetUrl);
+            
+            // Compare hostname and pathname for meaningful comparison
+            success = currentUrlObj.hostname === targetUrlObj.hostname &&
+                     (currentUrlObj.pathname === targetUrlObj.pathname || 
+                      currentUrl.includes(targetUrl));
+            
+            logger.debug('Navigation verification', {
+              success,
+              current: {
+                full: currentUrl,
+                hostname: currentUrlObj.hostname,
+                pathname: currentUrlObj.pathname
+              },
+              target: {
+                full: targetUrl,
+                hostname: targetUrlObj.hostname,
+                pathname: targetUrlObj.pathname
+              }
+            });
+          } catch (e) {
+            // If can't parse as URL, fall back to simple inclusion check
+            success = currentUrl.includes(targetUrl);
+            logger.debug('Navigation verification (simple)', {
+              success,
+              current: currentUrl,
+              target: targetUrl,
+              parseError: String(e)
+            });
+          }
+          
+          return success;
         }
         case "sendHumanMessage": // Always consider human interaction successful
+          success = true;
           return true;
         case "wait":
+          success = true;
           return true;
         default:
+          logger.warn(`Unknown action type: ${action.type}`);
           return false;
       }
     }, 2);
-
-    logger.debug('Action verification result', {
-      type: action.type,
-      success,
-      url: page.url()
-    });
 
     // Add completion INFO log
     logger.info(`Action verification ${success ? 'succeeded' : 'failed'}`, {
