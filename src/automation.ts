@@ -295,7 +295,7 @@ async function sendHumanMessageHandler(ctx: GraphContext): Promise<string> {
     try {
       pageInfo = await ctx.page.evaluate(() => {
         const mainContent = document.querySelector('main, article, #readme')?.textContent?.trim();
-        return mainContent ? mainContent.substring(0, 500) : document.title;
+        return mainContent ? mainContent.substring(0, 2000) : document.title;
       });
     } catch (err) {
       logger.error("Failed to extract page context", err);
@@ -562,11 +562,42 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
       throw new Error("Invalid context");
     }
   
+    // Special case for UNIVERSAL_SUBMIT_SELECTOR - simulate pressing Enter key
+    if (ctx.action.element === process.env.UNIVERSAL_SUBMIT_SELECTOR) {
+      logger.browser.action('keypress', {
+        key: 'Enter',
+        url: ctx.page.url()
+      });
+      
+      try {
+        // Use Playwright's keyboard API to press Enter
+        await ctx.page.keyboard.press('Enter');
+        
+        // Mark action as successful
+        ctx.lastActionSuccess = true;
+        ctx.successCount = (ctx.successCount || 0) + 1;
+        ctx.successfulActions?.push(`keypress:Enter`);
+        
+        logger.info('Successfully executed Enter key press', {
+          url: ctx.page.url()
+        });
+        
+        return "getPageState";
+      } catch (error) {
+        logger.error('Error pressing Enter key', { error });
+        ctx.lastActionSuccess = false;
+        ctx.retries = (ctx.retries || 0) + 1;
+        ctx.actionFeedback = "Submission failed. Please notify human handler.";
+        return "handleFailure";
+      }
+    }
+  
+    // Continue with regular click handling for normal elements
     logger.browser.action('click', {
       element: ctx.action.element,
       url: ctx.page.url()
     });
-  
+
     try {
       const { getElement } = await import("./browserExecutor.js");
       const elementHandle = await getElement(ctx.page, ctx.action);
