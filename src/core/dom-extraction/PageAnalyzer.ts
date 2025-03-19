@@ -7,9 +7,9 @@ import {
 import logger from '../../utils/logger.js';
 
 export class PageAnalyzer {
-  // Default configuration
+  // Update default configuration with doubled text length
   private static defaultConfig: DOMExtractionConfig = {
-    maxTextLength: 5000,
+    maxTextLength: 10000,  // Double from 5000
     includeHidden: false,
     extractDepth: 'standard'
   };

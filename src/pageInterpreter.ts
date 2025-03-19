@@ -24,19 +24,19 @@ export async function generatePageSummary(page: Page, domSnapshot: any): Promise
   }
   summary += '\n';
   
-  // Main content areas from landmarks
+  // Main content areas from landmarks - Add square brackets
   if (fullSnapshot.elements?.landmarks?.length) {
     summary += "MAIN CONTENT AREAS:\n";
     fullSnapshot.elements.landmarks.forEach(landmark => {
       if (landmark.text?.trim()) {
-        const cleanText = landmark.text.replace(/\s+/g, ' ').trim();
-        summary += `[${landmark.role}] ${cleanText.substring(0, 300)}${cleanText.length > 300 ? '...' : ''}\n`;
+        const cleanText = "[" + landmark.text.replace(/\t/g, '').trim() + "]"; // Remove tab characters but keep newlines
+        summary += `[${landmark.role}] ${cleanText.substring(0, 600)}${cleanText.length > 600 ? '...' : ''}\n`; // Double limit from 300
       }
     });
     summary += "\n";
   }
   
-  // Extract main content
+  // Extract main content - Double content limit
   if (fullSnapshot.content?.mainContent) {
     summary += `PAGE CONTENT:\n${fullSnapshot.content.mainContent}\n\n`;
   } else {
@@ -44,25 +44,25 @@ export async function generatePageSummary(page: Page, domSnapshot: any): Promise
     const htmlContent = await page.content();
     const $ = cheerio.load(htmlContent);
     $('script, style, svg, noscript, iframe, meta, link').remove();
-    const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
-    summary += `PAGE CONTENT:\n${bodyText.substring(0, 5000)}${bodyText.length > 5000 ? '...' : ''}\n\n`;
+    const bodyText = "[" + $('body').text().replace(/\t/g, '][').trim() + "]"; // Remove tabs but keep newlines
+    summary += `PAGE CONTENT:\n${bodyText.substring(0, 10000)}${bodyText.length > 10000 ? '...' : ''}\n\n`; // Double limit from 5000
   }
   
-  // Interactive elements
+  // Interactive elements - Add square brackets
   summary += "INTERACTIVE ELEMENTS:\n";
   
-  // Add buttons
+  // Add buttons with square brackets
   if (fullSnapshot.elements?.buttons?.length) {
     fullSnapshot.elements.buttons.forEach(button => {
       if (button.text) {
         const id = button.id ? `#${button.id}` : '';
         const selector = id || (button.classes?.length ? `.${button.classes.join('.')}` : 'button');
-        summary += `- BUTTON: selector="${selector}", text="${button.text}"\n`;
+        summary += `- BUTTON: selector="${selector}", text="[${button.text}]"\n`;
       }
     });
   }
   
-  // Add inputs
+  // Add inputs with square brackets for labels/placeholders
   if (fullSnapshot.elements?.inputs?.length) {
     fullSnapshot.elements.inputs.forEach(input => {
       const type = input.attributes?.type || input.tagName;
@@ -72,7 +72,7 @@ export async function generatePageSummary(page: Page, domSnapshot: any): Promise
       const selector = id || (input.tagName + nameSelector);
       const placeholder = input.attributes?.placeholder || '';
       
-      summary += `- INPUT: selector="${selector}", type="${type}"${placeholder ? `, placeholder="${placeholder}"` : ''}\n`;
+      summary += `- INPUT: selector="${selector}", type="${type}"${placeholder ? `, placeholder="[${placeholder}]"` : ''}\n`;
     });
   }
   

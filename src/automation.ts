@@ -392,28 +392,57 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
   },
 
   chooseAction: async (ctx: GraphContext) => {
-    logger.transition(`Transitioning to chooseAction`, {
-      url: ctx.page?.url(),
-      lastAction: ctx.action,
-      metrics: {
-        successCount: ctx.successCount,
-        totalActions: ctx.actionHistory?.length,
-        milestonesAchieved: ctx.recognizedMilestones?.length
-      }
-    });
-
-    // Check for stop request
-    const agentState = getAgentState();
-    if (agentState.isStopRequested()) {
-      logger.info('Stop requested by user');
-      ctx.history.push("Stop requested by user");
-      return "terminate";
+    if (!ctx.page) {
+      throw new Error("No page available");
     }
-
-    if (!ctx.page) throw new Error("Page not initialized");
-    const stateSnapshot = await getPageState(ctx.page);
+    
+    logger.browser.action('getState', {
+      url: ctx.page.url()
+    });
+    
+    // Check if this is a repeated action
+    let shouldShuffleElements = false;
+    if (ctx.actionHistory && ctx.actionHistory.length >= 2) {
+      const lastAction = ctx.actionHistory[ctx.actionHistory.length - 1];
+      const secondLastAction = ctx.actionHistory[ctx.actionHistory.length - 2];
+      
+      // Compare actions to detect repetition
+      if (lastAction.type === secondLastAction.type && 
+          lastAction.element === secondLastAction.element) {
+        shouldShuffleElements = true;
+        logger.debug('Detected repeated action - will shuffle element ordering', {
+          action: lastAction
+        });
+      }
+    }
+    
+    try {
+      const { PageAnalyzer } = await import("./core/dom-extraction/PageAnalyzer.js");
+      const domSnapshot = await PageAnalyzer.extractSnapshot(ctx.page);
+      
+      // Shuffle elements if needed to break repetition pattern
+      if (shouldShuffleElements && domSnapshot.elements) {
+        // Shuffle buttons
+        if (domSnapshot.elements.buttons && domSnapshot.elements.buttons.length > 1) {
+          domSnapshot.elements.buttons = shuffleArray([...domSnapshot.elements.buttons]);
+        }
+        
+        // Shuffle links
+        if (domSnapshot.elements.links && domSnapshot.elements.links.length > 1) {
+          domSnapshot.elements.links = shuffleArray([...domSnapshot.elements.links]);
+        }
+        
+        // Shuffle inputs
+        if (domSnapshot.elements.inputs && domSnapshot.elements.inputs.length > 1) {
+          domSnapshot.elements.inputs = shuffleArray([...domSnapshot.elements.inputs]);
+        }
+      }
+      
+      // Rest of the existing code...
+      const stateSnapshot = await getPageState(ctx.page);
     
     // Store state and update progress
+    const agentState = getAgentState();
     agentState.setLastValidState(stateSnapshot);
     ctx.compressedHistory = compressHistory(ctx.history);
     detectProgress(ctx, ctx.previousPageState, stateSnapshot);
@@ -549,6 +578,10 @@ const states: { [key: string]: (ctx: GraphContext) => Promise<string> } = {
         type: actionType,
         supportedTypes: Object.keys(states)
       });
+      return "handleFailure";
+    }
+    } catch (error) {
+      logger.error('Error in chooseAction', error);
       return "handleFailure";
     }
   },
@@ -1041,4 +1074,15 @@ function filterMostRelevantElements(elements: any[], maxCount: number): any[] {
   }
   
   return priorityElements.slice(0, maxCount);
+}
+
+/**
+ * Fisher-Yates shuffle algorithm to randomize array elements
+ */
+export function shuffleArray<T>(array: T[]): T[] {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
 }
