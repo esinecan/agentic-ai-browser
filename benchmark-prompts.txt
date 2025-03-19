@@ -1,12 +1,26 @@
+- Open https://www.xe.com. Find the currency converter and check the exchange rate from USD to EUR. If it’s below 1.05, say "bad time to exchange." If it's above 1.10, say "might be a good time to buy EUR." Otherwise, just give the number.  
+
+- Head over to https://github.com and search for "most starred repositories this month." Click on the first result. If it has over 10k stars, summarize what the project does. If not, go to the second-highest one and repeat the process.  
+
+- Navigate to https://www.nypl.org. Search for "The Catcher in the Rye." Check if it’s available at any physical branch. If yes, provide the location. If not, check if an e-book version is available. If neither, tell the user they’re out of luck.  
+
+- Search "best deals on wireless earbuds" on https://www.duckduckgo.com. Browse through the first few results and pick one that mentions a discount. Extract the discount percentage and where it's available, then relay that information. If no discounts are found, say "no luck today."  
+
+- Open https://en.wikipedia.org/wiki/Special:Random. Read the first paragraph. If it’s something historical or scientific, summarize it in two sentences. If it’s about a person, tell the user what they were famous for. If it’s something boring, just give them the title and say "meh."  
+
+- Visit https://www.flightaware.com. Look up flight "AA100" from New York to London. If the flight is "On Time," say "all good." If it’s delayed, find out by how long and mention the reason, if available. If the flight has landed, tell them the time it arrived.  
+
+- Instead of searching, open https://www.ssllabs.com/ssltest/. Enter "example.com" and run the test. If the SSL rating is A, say "good to go." If it’s B or lower, tell the user they might want to be careful. If the site has no SSL, say "uh-oh."  
+
+- Go to https://pagespeed.web.dev. Enter "https://www.bbc.com" and run a speed test. Check the overall performance score. If it's below 50, say "slow website." If it’s between 50 and 90, say "decent speed." If it’s above 90, say "this thing flies."
+
 - Go to https://www.nasa.gov. Look at the homepage first, then the "News" section, then the "recent publications" section. Create a one paragraph long briefing of the most interesting items and send this to user via sendHumanMessage.
 
-- Head to https://downforeveryoneorjustme.com. Enter "https://www.reddit.com" and check if it’s down or just slow. If it’s down, tell the user. If it’s up, tell them it's because they must have something wrong in the head that they can't access it. Recommend seeking medical advice.
+- Head to https://downforeveryoneorjustme.com. Enter "reddit" and check if it’s down or just slow. If it’s down, tell the user. If it’s up, tell them it's because they must have something wrong in the head that they can't access it. Recommend seeking medical advice.
 
 - Navigate to https://genius.com and search for "Bohemian Rhapsody". if any of the search results point you to lyrics, click on it. Scroll down and grab the first few lines. If lyrics aren’t available, let the user know.
 
-
-- Visit https://www.gsmarena.com. Search for "iPhone 15 Pro" and "Samsung Galaxy S24 Ultra." Open both pages. Compare battery life & camera specs. Summarize which one seems better based on those two factors.
-
+- Visit https://www.gsmarena.com. Search for "iPhone 15 Pro" and try tto go to the first result. tell me battery life & camera specs. then repeat it for Samsung Galaxy S23 Ultra. Summarize which one seems better based on those two factors.
 
 - Go to https://www.godaddy.com and search for "coolprojectidea.com" and see if it’s taken. If it is, try alternatives like appending"2025" or "AI" to the name, or you know, create variations until you find a usable one.
 
@@ -14,7 +28,6 @@
 
 - Visit https://www.reddit.com/r/memes. Look at the top post of the day. Describe the meme format and whether it’s a trending joke or a classic template.
 
-- Take the sentence: "Artificial intelligence is changing the world in ways we never imagined."
-Go to https://www.grammarly.com/plagiarism-checker and paste it in. If it’s flagged as unoriginal, find where it’s from and tell the user.
+- Take the sentence: "Artificial intelligence is changing the world in ways we never imagined." Go to https://www.grammarly.com/plagiarism-checker and paste it in. If it’s flagged as unoriginal, find where it’s from and tell the user.
 
-- Go to https://www.ups.com and enter tracking number "1Z999AA10123456784". If it’s in transit, tell the user the estimated delivery date. Otherwise tell what you find out.
+- Go to https://www.ups.com and enter tracking number "1Z999AA10123456784". If it’s in transit, tell the user the estimated delivery date. Otherwise tell what you find out. Use a panicked tone if the tracking number is invalid.

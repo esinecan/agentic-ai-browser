@@ -1,6 +1,7 @@
 import { launchBrowser, createPage, getPageState, verifyAction, GraphContext, compressHistory, verifyElementExists, Action } from "./browserExecutor.js";
 import { ollamaProcessor } from "./core/llm/llmProcessorOllama.js";
 import { geminiProcessor } from "./core/llm/llmProcessorGemini.js";
+import { openaiProcessor } from "./core/llm/llmProcessorOpenAI.js";
 import { LLMProcessor } from './core/llm/llmProcessor.js';
 import readline from 'readline';
 import fs from 'fs';
@@ -12,8 +13,18 @@ import logger from './utils/logger.js';
 const MAX_RETRIES = 7;
 const MAX_REPEATED_ACTIONS = 3; // Number of repeated actions before forced change
 
-// Use our ollama processor by default, but allow for other implementations
-const llmProcessor: LLMProcessor = process.env.LLM_PROVIDER === 'gemini' ? geminiProcessor : ollamaProcessor;
+// Select LLM processor based on environment variable
+let llmProcessor: LLMProcessor;
+switch(process.env.LLM_PROVIDER?.toLowerCase()) {
+  case 'gemini':
+    llmProcessor = geminiProcessor;
+    break;
+  case 'openai':
+    llmProcessor = openaiProcessor;
+    break;
+  default:
+    llmProcessor = ollamaProcessor;
+}
 
 // Function to check if an action is redundant/repeated
 function isRedundantAction(currentAction: Action, history: Action[]): boolean {
