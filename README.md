@@ -1,6 +1,6 @@
 # Agentic AI Browser
 
-An intelligent web automation agent that uses state-of-the-art AI techniques to understand and interact with web pages autonomously.
+An automated browser agent powered by LLMs for web automation tasks.
 
 ## Overview
 This project is a **sophisticated AI-driven web automation agent** that uses **Playwright** for browser interactions and **LLM integration** for intelligent decision-making. It's designed for **reliable, adaptable web automation** with robust element detection and contextual understanding.
@@ -11,10 +11,13 @@ This project is a **sophisticated AI-driven web automation agent** that uses **P
 - **Adaptive Element Detection** – Handles different UI patterns across websites automatically
 - **Action Verification & Recovery** – Ensures actions succeed with smart fallbacks and alternative selectors
 - **Context-Aware Interaction** – Maintains task history and adapts based on successes and failures
-- **Multi-LLM Support** – Works with both **Gemini** and **Ollama** models for flexibility
+- **Multi-LLM Support** – Works with both **Gemini**, **Ollama**, and **OpenAI** models for flexibility
 - **Improved Resilience** – Enhanced retry logic with increased attempt limits
 - **Agent State Management** – Track and control agent execution state
 - **Manual Intervention** – Request human help when the agent is stuck
+- **Handles complex web navigation tasks** - Sometimes. Other times, well...
+- **Automatic action selection and execution** - Modular action structure allows easy extension
+- **Human-in-the-loop assistance when needed** - The LLM learns to consult the human when stuck in context, as well as repeated failure detection
 
 ---
 
@@ -32,15 +35,38 @@ cd agentic-ai-browser
 
 ### 3️⃣ Configure Environment Variables
 Create a .env file in the root directory:
-```ini
+```properties
+# Choose LLM Provider (ollama, gemini, or openai)
+LLM_PROVIDER=ollama
+
+# Ollama Configuration
+OLLAMA_HOST=http://localhost:11434
+# LLM_MODEL=browser  # For Ollama
+
+# Gemini Configuration
+# LLM_PROVIDER=gemini
+# GEMINI_API_KEY=your-gemini-api-key-here
+# LLM_MODEL=gemini-2.0-flash-lite
+
+# OpenAI API Configuration
+# LLM_PROVIDER=openai
+# OPENAI_API_KEY=your-openai-api-key-here
+# LLM_MODEL=gpt-3.5-turbo
+# OPENAI_BASE_URL=https://api.openai.com/v1
+
+# For OpenAI API-compatible providers (e.g., DeepSeek)
+# LLM_PROVIDER=openai
+# OPENAI_API_KEY=your-deepseek-api-key-here
+# LLM_MODEL=deepseek-chat
+# OPENAI_BASE_URL=https://api.deepseek.com
+
+# General Configuration
 HEADLESS=false
-START_URL=https://www.example.com
+START_URL=https://en.wikipedia.org/wiki/Main_Page
 LOG_DIR=./logs
 SCREENSHOT_DIR=./screenshots
-LLM_PROVIDER=gemini  # or ollama
-GEMINI_API_KEY=your-key-here  # if using Gemini
-OLLAMA_BASE_URL=http://localhost:11434  # if using Ollama
-LLM_MODEL=gemini-2.0-flash  # or any other model
+DEBUG_LEVEL=0
+UNIVERSAL_SUBMIT_SELECTOR=enterKeyPress
 ```
 
 ### 4️⃣ Install Dependencies
@@ -64,12 +90,14 @@ npm start
 ## Technical Architecture
 
 ### 1. DOM Extraction & Analysis System
-The project features a sophisticated DOM extraction system that provides structured page understanding:
+The project features a sophisticated DOM extraction system that provides structured page understanding for the AI agent:
 
 #### Core Components:
 - **DOMExtractor Interface**: Defines the contract for all extractors
-- **PageAnalyzer**: Orchestrates extraction and combines results
-- **Initialization System**: Ensures all extractors are registered properly 
+- **BaseExtractor**: Abstract class implementing common extraction utilities
+- **PageAnalyzer**: Orchestrates extraction process and combines results
+- **DOMExtractorRegistry**: Manages registration and lookup of extractors
+- **Configuration System**: Controls extraction depth and behavior
 
 #### Extractor Types:
 - **Basic Extractors**: Title, URL, meta description
@@ -77,70 +105,169 @@ The project features a sophisticated DOM extraction system that provides structu
 - **Content Extractors**: Main content, headings
 - **Advanced Extractors**: Navigation elements, forms
 
+#### Key Features:
+- **Modular Architecture**: Easy to add new extraction capabilities
+- **Error Isolation**: Individual extractor failures don't affect others
+- **Performance Optimization**: Timeout handling and parallel extraction
+- **Diagnostic Information**: Detailed extraction metrics and diagnostics
+- **Visibility Detection**: Distinguishes visible vs hidden elements
+- **Flexible Configuration**: Controls extraction depth and behavior
+
 #### Extraction Process:
-1. `PageAnalyzer.extractSnapshot()` triggers the process
-2. Applicable extractors are selected based on configuration
-3. Each extractor runs independently with timeout protection
-4. Results are combined into a unified DOMSnapshot object
-5. `pageInterpreter.generatePageSummary()` converts the snapshot to LLM-friendly text
+1. **Initialization**: PageAnalyzer configures extraction parameters
+2. **Extractor Selection**: Applicable extractors are selected based on configuration
+3. **Parallel Processing**: Each extractor runs independently with timeout protection
+4. **Result Aggregation**: Results are combined into a unified DOMSnapshot object
+5. **Post-processing**: Elements are categorized and structured for easy access
+6. **LLM Conversion**: Snapshot is transformed into LLM-friendly text representations
+
+#### Integration Points:
+- Powers the page interpretation system for LLM context
+- Supports element selection and interaction strategies
+- Provides structured data for verification and recovery systems
+- Enables semantic understanding of page structure and content
 
 ### 2. Element Selection System
-The system uses a strategy pattern to locate elements through multiple approaches:
+The system uses a strategy pattern to locate elements through multiple approaches, providing robust element detection across diverse web interfaces:
 
 #### Strategy Architecture:
-- **ElementFinder**: Core class that coordinates strategies
-- **BaseElementStrategy**: Abstract base class for all strategies
-- **Strategy Registry**: Manages and prioritizes strategies
+- **ElementFinder**: Core class that coordinates strategy selection and execution
+- **BaseElementStrategy**: Abstract class with common utilities for all strategies
+- **ElementContext**: Shared context object for tracking attempts and timeouts
+- **Strategy Registry**: Manages strategies with automatic priority sorting
 
 #### Selection Strategies (in priority order):
-1. **DirectSelectorStrategy**: Tries the exact selector provided
-2. **IdSelectorStrategy**: Specializes in ID-based selectors
-3. **RoleBasedStrategy**: Uses ARIA roles and accessibility properties
-4. **LinkStrategy**: Special handling for link elements
-5. **SingleElementStrategy**: Fallback for simple pages
+1. **DirectSelectorStrategy (100)**: Tries the exact selector provided
+2. **IdSelectorStrategy (90)**: Specializes in ID-based selectors with high-confidence matching
+3. **InputPatternStrategy (70)**: Uses common input field patterns across websites
+4. **LinkStrategy (65)**: Special handling for link elements with href attributes
+5. **RoleBasedStrategy (60)**: Uses ARIA roles and accessibility properties
+6. **SingleElementStrategy (40)**: Last-resort fallback for simple pages
+
+#### Key Features:
+- **Prioritized Execution**: Tries strategies in order of likelihood of success
+- **Independent Error Handling**: Failures in one strategy don't affect others
+- **Contextual Intelligence**: Adapts to different page structures automatically
+- **Alternative Suggestions**: When no match is found, suggests alternatives
+- **Performance Optimization**: Early termination once element is found
+- **Smart Timeouts**: Distributes available time across applicable strategies
+- **Diagnostics**: Provides detailed logs about element finding attempts
+- **Cross-browser Compatibility**: Works reliably across different browser engines
 
 #### Selection Process:
-1. `elementFinder.findElement()` is called with an action
-2. Each applicable strategy is tried in priority order
-3. First strategy to find a matching element returns it
-4. If all strategies fail, alternative suggestions are provided
+1. **Initialization**: `elementFinder.findElement()` is called with an action
+2. **Strategy Filtering**: Only strategies that can handle the action type are considered
+3. **Prioritized Execution**: Each applicable strategy is tried in priority order
+4. **Element Detection**: First strategy to find a matching element returns it
+5. **Fallback Mechanism**: If direct selectors fail, tries alternative approaches
+6. **Alternative Generation**: If all strategies fail, provides suggestions
+
+#### Integration Points:
+- Used by BrowserExecutor for all element interactions
+- Powers the verification system for checking action success
+- Enables dynamic recovery from selector changes or failures
+- Supports automated element suggestion when original selectors fail
 
 ### 3. Action Execution Pipeline
-Actions flow through a sophisticated pipeline:
+Actions flow through a sophisticated pipeline with robust execution, verification, and recovery mechanisms:
 
 #### Core Components:
-- **ActionExtractor**: Parses raw LLM output into structured actions
-- **BrowserExecutor**: Handles browser interactions with Playwright
-- **SuccessPatterns**: Tracks successful interaction patterns
-- **RecoveryEngine**: Handles failures and retries
+- **ActionExtractor**: Parses raw LLM output into structured actions using multiple extraction methods
+- **BrowserExecutor**: Handles browser interactions with Playwright with advanced error handling
+- **SuccessPatterns**: Records and learns from successful interactions for future suggestions
+- **RecoveryEngine**: Intelligent failure handling with contextual retries and human assistance
 
 #### Action Types:
-- **Click**: Interacts with buttons and clickable elements
-- **Input**: Enters text into form fields
-- **Navigate**: Loads URLs and handles navigation
-- **Wait**: Pauses execution
-- **SendHumanMessage**: Requests human assistance
+- **Click**: Interacts with buttons and clickable elements with verification
+- **Input**: Smart text entry with focus management and special field type handling
+- **Navigate**: URL normalization and navigation with relative URL support
+- **Wait**: Managed execution pauses with dynamic timing
+- **SendHumanMessage**: Contextual human assistance requests with screenshot capture
 
-#### Verification Process:
-1. Action is executed via Playwright
-2. `verifyAction()` confirms success based on action type
-3. Results feed into success pattern tracking
-4. Failed actions trigger the recovery system
+#### Smart Execution Features:
+- **Universal Form Submission**: Special handling for Enter key presses
+- **Search Input Detection**: Optimized handling for search boxes with suggestion support
+- **Element Focus Management**: Click-before-fill approach for reliable input
+- **URL Normalization**: Automatic conversion of relative URLs to absolute
+- **Action Context Enrichment**: Previous URL tracking and domain identification
+
+#### Verification & Success Tracking:
+- **Type-Specific Verification**: Custom verification logic based on action type
+- **Domain Pattern Learning**: Recording successful selectors by website domain
+- **Success Pattern Filtering**: Intelligent filtering of significant vs. trivial actions
+- **Successful Action Sequences**: Tracking and leveraging sequences of successful actions
+- **Contextual Success Feedback**: Action-specific feedback for the LLM
+
+#### Failure Management & Recovery:
+- **Redundancy Detection**: Identification and prevention of repetitive failed actions
+- **Smart Retry Strategies**: Progressive retry with alternative approaches
+- **Failure Pattern Tracking**: Recording common failure modes for prevention
+- **Alternative Suggestions**: Finding similar elements when exact matches fail
+- **Human Intervention**: Intelligent triggering of human assistance with context
+
+#### Execution Process Flow:
+1. **Action Selection**: LLM generates action based on current state and history
+2. **Action Validation**: Pre-execution validation and normalization
+3. **Redundancy Check**: Prevent repetitive unsuccessful actions
+4. **Element Location**: Find target element using strategy pattern
+5. **Action Execution**: Execute with type-specific handling
+6. **Verification**: Confirm success using type-specific criteria
+7. **Pattern Recording**: Record successful actions into the pattern database
+8. **State Update**: Update page state and provide feedback
+9. **Recovery (If Needed)**: Handle failures with retries or human assistance
+
+#### Integration Points:
+- **Element Finding System**: Uses the strategy pattern for reliable element selection
+- **DOM Analysis System**: Leverages page understanding for context-aware actions
+- **LLM Integration**: Provides rich feedback to guide future actions
+- **State Management**: Coordinates with the state machine for execution flow
 
 ### 4. State Management & Automation Flow
-The system uses a state machine for reliable execution flow:
+The system uses a sophisticated state machine architecture for reliable execution flow with persistent context and learning capabilities:
+
+#### Core Components:
+- **GraphContext**: Shared context object passed between states containing browser state, history, milestones, and success metrics
+- **State Handlers**: Modular functions for each state that process context and determine transitions
+- **State Machine Runner**: Orchestrates execution flow with error handling and state transitions
+- **Agent State Manager**: Controls execution state with stop/resume capabilities
 
 #### Key States:
-- **start**: Initializes the browser and page
-- **chooseAction**: Requests next action from the LLM
-- **[action types]**: Handles specific actions (click, input, etc.)
-- **handleFailure**: Manages retries and recovery
-- **terminate**: Closes the browser
+- **start**: Initializes browser, page, and context objects
+- **chooseAction**: Requests next action from LLM with dynamic context enrichment
+- **[action types]**: Specialized handlers for each action type (click, input, navigate, etc.)
+- **handleFailure**: Progressive retry logic with pattern recognition
+- **sendHumanMessage**: Human intervention interface with screenshot capture
+- **terminate**: Graceful shutdown and resource cleanup
 
-#### Goal Tracking:
-- **Milestones**: Tracks progress toward the user's goal
-- **Progress Detection**: Identifies meaningful state changes
-- **Feedback Generation**: Provides context for the LLM
+#### Learning Mechanisms:
+- **Success Pattern Recording**: Stores successful selectors and actions by domain
+- **Pattern Filtering**: Intelligently filters trivial vs. significant actions
+- **Suggestion Generation**: Provides context-aware suggestions based on past successes
+- **Failure Mode Learning**: Adapts suggestions based on failure patterns
+- **Persistent Pattern Storage**: Saves patterns to disk for cross-session learning
+
+#### Goal & Progress Tracking:
+- **Automated Milestone Generation**: Creates milestones based on user goal type
+- **Dynamic Progress Detection**: Identifies meaningful state changes between page states
+- **Element-Based Milestone Detection**: Recognizes achievements based on page elements
+- **Multi-Milestone Tracking**: Records completion across search, login, form, and other workflows
+
+#### Context Enrichment:
+- **Action History Compression**: Condenses action history for efficient context
+- **Success Streak Tracking**: Monitors consecutive successful actions
+- **Redundancy Detection**: Identifies repeated or cyclical actions. Shuffles placement of page elements to use primacy and recency effects in LLM attention.
+- **Action Feedback Generation**: Creates contextual feedback for the LLM
+- **Domain-Specific Suggestions**: Provides targeted advice based on current website
+
+#### State Transition Flow:
+1. **Initialization**: Sets up context with user goal and milestones
+2. **Action Selection**: LLM chooses action based on enriched context
+3. **Pre-execution Validation**: Checks for redundancy and feasibility
+4. **Action Execution**: State-specific handling with error protection
+5. **Verification & Recording**: Verifies success and records patterns
+6. **Context Update**: Updates history, feedback, and success metrics
+7. **State Determination**: Selects next appropriate state
+8. **Learning Integration**: Updates success patterns for future use
 
 ### 5. LLM Integration
 Support for multiple LLM backends with a unified interface:
@@ -148,6 +275,7 @@ Support for multiple LLM backends with a unified interface:
 #### Providers:
 - **Gemini**: Using Google's Gemini API
 - **Ollama**: Local LLM deployment
+- **OpenAI**: OpenAI GPT models and compatible APIs
 
 #### Prompt Architecture:
 - **System Prompt**: Defines agent role and capabilities
@@ -161,7 +289,7 @@ Support for multiple LLM backends with a unified interface:
 - Logs are stored in logs directory with timestamps
 - Screenshots are saved to screenshots on failures
 - Page state snapshots are recorded before each action
-- To debug with visual browser:
+- It's a lot more fun with visual browser:
 ```sh
 # Set in .env or use environment variable:
 HEADLESS=false npm run dev
@@ -172,20 +300,27 @@ HEADLESS=false npm run dev
 ## LLM Configuration
 The agent supports multiple LLM backends:
 
-### Gemini
-Using the advanced gemini-2.0-flash model:
-```ini
-LLM_PROVIDER=gemini
-GEMINI_API_KEY=your-key-here
-LLM_MODEL=gemini-2.0-flash
-```
+### Ollama (Local Models)
+For running models locally using Ollama:
+- Set `LLM_PROVIDER=ollama`
+- Configure `OLLAMA_HOST` (default: http://localhost:11434)
+- Choose your model with `LLM_MODEL` (e.g., phi4-mini, llama3, etc.)
 
-### Ollama (Local)
-```ini
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434
-LLM_MODEL=phi4-mini
-```
+### Gemini
+For using Google's Gemini API:
+- Set `LLM_PROVIDER=gemini`
+- Set `GEMINI_API_KEY` with your API key
+- Set `LLM_MODEL` to your preferred Gemini model (e.g., gemini-2.0-flash-lite)
+
+### OpenAI and Compatible APIs (New!)
+For using OpenAI and compatible APIs like DeepSeek:
+- Set `LLM_PROVIDER=openai`
+- Set `OPENAI_API_KEY` with your API key
+- Set `LLM_MODEL` to your preferred model (e.g., gpt-3.5-turbo)
+- Optionally set `OPENAI_BASE_URL` for compatible APIs:
+  - OpenAI: https://api.openai.com/v1 (default)
+  - DeepSeek: https://api.deepseek.com
+  - Other compatible providers: Use their respective API base URLs
 
 ---
 
