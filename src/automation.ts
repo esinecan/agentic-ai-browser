@@ -53,6 +53,21 @@ function promptUser(question: string): Promise<string> {
   });
 }
 
+function sexyPrint(text: string, delay = 50): Promise<void> {
+  return new Promise((resolve) => {
+    let i = 0;
+    const interval = setInterval(() => {
+      process.stdout.write(text[i]);
+      i++;
+      if (i >= text.length) {
+        clearInterval(interval);
+        process.stdout.write("\n");
+        resolve();
+      }
+    }, delay);
+  });
+}
+
 // Extract the sendHumanMessage handler to a standalone function
 async function sendHumanMessageHandler(ctx: GraphContext): Promise<string> {
   if (!ctx.page || !ctx.action) throw new Error("Invalid context");
@@ -82,15 +97,12 @@ async function sendHumanMessageHandler(ctx: GraphContext): Promise<string> {
     }
     
     const formattedQuestion = `
-AI needs your help (screenshot saved to ${screenshotPath}):
-
-${question}
-
 Current URL: ${ctx.page.url()}
 Current task: ${ctx.userGoal}
 Recent actions: ${ctx.history.slice(-3).join("\n")}
-${pageInfo ? `\nPage context: ${pageInfo}...\n` : ''}
 
+AI needs your help (screenshot saved to ${screenshotPath}):
+${question}
 Your guidance:`;
     
     logger.info("Asking for human help", {
@@ -101,14 +113,14 @@ Your guidance:`;
     });
 
     const humanResponse = await promptUser(formattedQuestion);
-    const newGoal = await promptUser("Do you want to update the goal? (Leave empty to keep current goal): ");
+    /*const newGoal = await promptUser("Do you want to update the goal? (Leave empty to keep current goal): ");
     if (newGoal.trim() !== "") {
       ctx.userGoal = newGoal;
       ctx.history.push(`User updated goal to: ${newGoal}`);
       // Use the extracted initializeMilestones function from the milestones module
       const { initializeMilestones } = await import('./core/automation/milestones.js');
       initializeMilestones(ctx);
-    }
+    }*/
 
     logger.info("Received human response", {
       responsePreview: humanResponse.substring(0, 100)
@@ -360,8 +372,9 @@ registerState("getPageState", getPageStateHandler);
 // Exported function to run the entire automation graph.
 export async function runGraph(): Promise<void> {
   // Prompt the user for their automation goal
-  const userGoal = await promptUser("Please enter your goal for this automation: ");
-  
+  const userGoal = process.env.goal || "";
+  console.log("Please enter your goal for this automation: ");
+  await sexyPrint(userGoal);
   // Initialize context with user goal and history
   const ctx: GraphContext = { 
     history: [],

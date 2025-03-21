@@ -13,71 +13,70 @@ export class ButtonExtractor extends BaseExtractor implements DOMExtractorStrate
     try {
       logger.debug('Running ButtonExtractor...');
       
-      // First inject the visibility helper script separately
-      await page.evaluate(visibilityHelperScript);
-      
-      // Then run the extraction with proper typing
-      const buttons = await page.evaluate((selector) => {
-        const elements = document.querySelectorAll(selector);
-        
-        // Use the injected function directly with proper casting
-        function isElementVisible(element: Element): boolean {
-          if (!element) return false;
+      // Replace separate evaluation with safeEvaluate
+      return this.safeEvaluate(
+        page,
+        (selector) => {
+          const elements = document.querySelectorAll(selector);
           
-          try {
-            const style = window.getComputedStyle(element);
-            const htmlElement = element as HTMLElement;
-            return style.display !== 'none' && 
-                  style.visibility !== 'hidden' && 
-                  (htmlElement.offsetParent !== null || style.position === 'fixed');
-          } catch (e) {
-            console.error('Error checking visibility:', e);
-            return false;
-          }
-        }
-        
-        return Array.from(elements)
-          .map(el => {
-            const buttonElement = el as HTMLElement;
+          // Inline visibility check to replace the helper
+          function isElementVisible(element: Element): boolean {
+            if (!element) return false;
             
-            const text = buttonElement.textContent?.trim() || 
-                        buttonElement.getAttribute('value') || 
-                        buttonElement.getAttribute('aria-label') || '';
-            
-            const attributes: Record<string, string> = {};
-            const type = buttonElement.getAttribute('type');
-            const name = buttonElement.getAttribute('name');
-            
-            if (type) attributes['type'] = type;
-            if (name) attributes['name'] = name;
-            
-            let classNames: string[] = [];
-            if (buttonElement.classList) {
-              classNames = Array.from(buttonElement.classList);
-            } else {
-              const className = buttonElement.getAttribute('class');
-              if (className) {
-                classNames = className.split(' ').filter(Boolean);
-              }
+            try {
+              const style = window.getComputedStyle(element);
+              const htmlElement = element as HTMLElement;
+              return style.display !== 'none' && 
+                    style.visibility !== 'hidden' && 
+                    (htmlElement.offsetParent !== null || style.position === 'fixed');
+            } catch (e) {
+              console.error('Error checking visibility:', e);
+              return false;
             }
-            
-            return {
-              tagName: buttonElement.tagName.toLowerCase(),
-              id: buttonElement.id || undefined,
-              classes: classNames,
-              text,
-              attributes,
-              isVisible: isElementVisible(buttonElement),
-              role: buttonElement.getAttribute('role') || 'button',
-              selector: buttonElement.id ? `#${buttonElement.id}` : 
-                      (classNames.length > 0 ? `.${classNames[0]}` : 
-                      buttonElement.tagName.toLowerCase())
-            };
-          })
-          .filter(button => button.text);
-      }, this.selector);
-      
-      return buttons;
+          }
+          
+          return Array.from(elements)
+            .map(el => {
+              const buttonElement = el as HTMLElement;
+              
+              const text = buttonElement.textContent?.trim() || 
+                          buttonElement.getAttribute('value') || 
+                          buttonElement.getAttribute('aria-label') || '';
+              
+              const attributes: Record<string, string> = {};
+              const type = buttonElement.getAttribute('type');
+              const name = buttonElement.getAttribute('name');
+              
+              if (type) attributes['type'] = type;
+              if (name) attributes['name'] = name;
+              
+              let classNames: string[] = [];
+              if (buttonElement.classList) {
+                classNames = Array.from(buttonElement.classList);
+              } else {
+                const className = buttonElement.getAttribute('class');
+                if (className) {
+                  classNames = className.split(' ').filter(Boolean);
+                }
+              }
+              
+              return {
+                tagName: buttonElement.tagName.toLowerCase(),
+                id: buttonElement.id || undefined,
+                classes: classNames,
+                text,
+                attributes,
+                isVisible: isElementVisible(buttonElement),
+                role: buttonElement.getAttribute('role') || 'button',
+                selector: buttonElement.id ? `#${buttonElement.id}` : 
+                        (classNames.length > 0 ? `.${classNames[0]}` : 
+                        buttonElement.tagName.toLowerCase())
+              };
+            })
+            .filter(button => button.text);
+        },
+        []
+      );
     } catch (error) {
       logger.error('Error extracting buttons', { error });
       return [];

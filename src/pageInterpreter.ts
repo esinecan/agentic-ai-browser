@@ -97,19 +97,19 @@ export async function generatePageSummary(page: Page, domSnapshot: any): Promise
   
   // Add links (limited to most important)
   const links = fullSnapshot.elements?.links || [];
-  const navigationLinks = fullSnapshot.content?.navigation?.[0]?.links || [];
+  const navigationLinks = fullSnapshot. content?.navigation?.[0]?.links || [];
   
   // Prioritize navigation links
   if (navigationLinks.length) {
     summary += "\nNAVIGATION LINKS:\n";
-    navigationLinks.slice(0, 10).forEach((link: any) => {
+    navigationLinks.slice(0, 100).forEach((link: any) => {
       if (link.text && link.href) {
         summary += `- ${link.text} -> ${link.href}\n`;
       }
     });
   }
   
-  if (links.length && links.length <= 10) {
+  if (links.length && links.length <= 100) {
     summary += "\nOTHER LINKS:\n";
     links.forEach((link: DOMElement) => {
       const href = link.href || link.attributes?.href;

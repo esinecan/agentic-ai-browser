@@ -1,6 +1,7 @@
 import { Page } from 'playwright';
 import { BaseExtractor } from './base.js';
-import { DOMExtractionConfig, DOMExtractorRegistry } from '../types.js';
+import { DOMExtractionConfig } from '../types.js';
+import logger from '../../../utils/logger.js';
 
 export class HeadingsExtractor extends BaseExtractor {
   constructor() {
@@ -56,5 +57,67 @@ export class MainContentExtractor extends BaseExtractor {
       },
       ''
     ).then(text => this.truncateText(text, maxLength));
+  }
+}
+
+export class TableExtractor extends BaseExtractor {
+  constructor() {
+    super('tables', 'table');
+  }
+  
+  async extract(page: Page, config: DOMExtractionConfig): Promise<any> {
+    return this.safeEvaluate(
+      page,
+      (selector) => {
+        return Array.from(document.querySelectorAll(selector))
+          .map(table => {
+            const headers = Array.from(table.querySelectorAll('th'))
+              .map(th => th.textContent?.trim() || '');
+            
+            const rows = Array.from(table.querySelectorAll('tr'))
+              .map(row => {
+                return Array.from(row.querySelectorAll('td'))
+                  .map(cell => cell.textContent?.trim() || '');
+              })
+              .filter(row => row.length > 0);
+            
+            return {
+              headers: headers.length > 0 ? headers : undefined,
+              rows: rows,
+              caption: table.querySelector('caption')?.textContent?.trim()
+            };
+          });
+      },
+      []
+    );
+  }
+}
+
+export class ListExtractor extends BaseExtractor {
+  constructor() {
+    super('lists', 'ul, ol');
+  }
+  
+  async extract(page: Page, config: DOMExtractionConfig): Promise<any> {
+    return this.safeEvaluate(
+      page,
+      (selector) => {
+        return Array.from(document.querySelectorAll(selector))
+          .filter(list => {
+            // Skip tiny lists or those in nav elements
+            const items = list.querySelectorAll('li');
+            return items.length > 1 && !list.closest('nav');
+          })
+          .map(list => {
+            const type = list.tagName.toLowerCase();
+            const items = Array.from(list.querySelectorAll('li'))
+              .map(item => item.textContent?.trim())
+              .filter(Boolean);
+              
+            return { type, items };
+          });
+      },
+      []
+    );
   }
 }

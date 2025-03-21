@@ -102,8 +102,12 @@ The project features a sophisticated DOM extraction system that provides structu
 #### Extractor Types:
 - **Basic Extractors**: Title, URL, meta description
 - **Element Extractors**: Buttons, inputs, links, landmarks
-- **Content Extractors**: Main content, headings
-- **Advanced Extractors**: Navigation elements, forms
+- **Content Extractors**: Main content, headings, tables, lists
+- **Navigation Extractors**: Navigation menus, important links
+- **Form Extractors**: Form elements, input fields, submission buttons
+- **Media Extractors**: Images with alt text and dimensions
+- **Structure Extractors**: Frames, iframes and embedded content
+- **Advanced Extractors**: Role-based accessibility elements
 
 #### Key Features:
 - **Modular Architecture**: Easy to add new extraction capabilities

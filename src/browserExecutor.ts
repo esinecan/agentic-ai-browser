@@ -732,7 +732,7 @@ export async function navigate(page: Page, url: string): Promise<boolean> {
     await page.goto(url, { timeout: DEFAULT_NAVIGATION_TIMEOUT });
     return true;
   } catch (error) {
-    logger.error(`Navigation failed: ${error}`);
+    //logger.error(`Navigation failed: ${error}`);
     return false;
   }
 }

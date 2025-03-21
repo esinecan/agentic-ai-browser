@@ -81,10 +81,28 @@ class HeadingsExtractor extends BaseExtractor {
 class MainContentExtractor extends BaseExtractor {
     +extract(page: Page, config: DOMExtractionConfig): Promise<string>
 }
-class NavigationExtractor extends BaseExtractor {
+class TableExtractor extends BaseExtractor {
     +extract(page: Page, config: DOMExtractionConfig): Promise<any>
 }
+class ListExtractor extends BaseExtractor {
+    +extract(page: Page, config: DOMExtractionConfig): Promise<any>
+}
+interface LinkData {
+    +text: string
+    +href: string
+    +importance?: number | undefined
+}
+class NavigationExtractor extends BaseExtractor {
+    +extract(page: Page, config: DOMExtractionConfig): Promise<any>
+    -extractAllUsefulLinks(page: Page): Promise<LinkData[]>
+}
 class FormExtractor extends BaseExtractor {
+    +extract(page: Page, config: DOMExtractionConfig): Promise<any>
+}
+class ImageExtractor extends BaseExtractor {
+    +extract(page: Page, config: DOMExtractionConfig): Promise<any>
+}
+class FrameExtractor extends BaseExtractor {
     +extract(page: Page, config: DOMExtractionConfig): Promise<any>
 }
 class PageAnalyzer {
@@ -337,6 +355,7 @@ class SuccessPatterns {
 +terminateHandler(ctx: GraphContext): Promise<string>
 +getPageStateHandler(ctx: GraphContext): Promise<string>
 +promptUser(question: string): Promise<string>
++sexyPrint(text: string, delay?: number): Promise<void>
 +sendHumanMessageHandler(ctx: GraphContext): Promise<string>
 +runGraph(): Promise<void>
 +stopAgent(): Promise<void>

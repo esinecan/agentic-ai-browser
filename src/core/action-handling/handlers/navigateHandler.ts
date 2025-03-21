@@ -18,8 +18,41 @@ export async function navigateHandler(ctx: GraphContext): Promise<string> {
       waitUntil: "domcontentloaded"
     });
     
+    // First try standard verification
     const verified = await verifyAction(ctx.page, ctx.action);
-    if (!verified) throw new Error("Action verification failed after navigation");
+    
+    // If standard verification fails, do a more flexible URL comparison
+    if (!verified) {
+      const currentUrl = new URL(ctx.page.url());
+      const targetUrl = new URL(ctx.action.value);
+      
+      // Consider navigation successful if:
+      // 1. Hostnames match when ignoring www. prefix
+      // 2. Pathnames are functionally equivalent (accounting for trailing slash)
+      const currentHostname = currentUrl.hostname.replace(/^www\./, '');
+      const targetHostname = targetUrl.hostname.replace(/^www\./, '');
+      
+      const currentPathname = currentUrl.pathname === '/' ? '/' : currentUrl.pathname.replace(/\/$/, '');
+      const targetPathname = targetUrl.pathname === '/' ? '/' : targetUrl.pathname.replace(/\/$/, '');
+      
+      const hostnameMatches = currentHostname === targetHostname;
+      const pathnameMatches = currentPathname === targetPathname;
+      
+      if (!hostnameMatches || !pathnameMatches) {
+        logger.debug(`Flexible URL verification`, {
+          currentUrl: ctx.page.url(),
+          targetUrl: ctx.action.value,
+          hostnameMatches,
+          pathnameMatches
+        });
+        throw new Error("Navigation verification failed - URLs don't match even with flexible comparison");
+      }
+      
+      logger.debug(`Navigation succeeded with flexible URL verification`, {
+        currentUrl: ctx.page.url(),
+        targetUrl: ctx.action.value
+      });
+    }
     
     ctx.lastActionSuccess = true;
     ctx.successCount = (ctx.successCount || 0) + 1;

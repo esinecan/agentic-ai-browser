@@ -21,28 +21,9 @@ export abstract class BaseExtractor implements DOMExtractorStrategy {
     fallback: T
   ): Promise<T> {
     try {
-      // Using Playwright's more reliable approach for function evaluation
-      return await page.evaluate(
-        ({ fnStr, selector, helperScript }) => {
-          // First evaluate the helper script
-          eval(helperScript);
-          
-          // Create a proper function wrapper
-          const evaluatedFn = new Function('selector', `
-            return (${fnStr})(selector);
-          `);
-          
-          // Execute with the selector
-          return evaluatedFn(selector);
-        }, 
-        { 
-          fnStr: fn.toString(),
-          selector: this.selector,
-          helperScript: visibilityHelperScript
-        }
-      );
+      return await page.evaluate(fn, this.selector);
     } catch (error) {
-      console.error('Error during evaluation:', error);
+      logger.error(`Error evaluating in ${this.name} extractor`, { error });
       return fallback;
     }
   }

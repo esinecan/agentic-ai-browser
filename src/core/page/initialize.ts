@@ -1,8 +1,9 @@
 import { DOMExtractorRegistry } from './types.js';
 import { ButtonExtractor, InputExtractor, LinkExtractor, LandmarkExtractor } from './extractor/elements.js';
 import { TitleExtractor, URLExtractor, MetaDescriptionExtractor } from './extractor/basic.js';
-import { HeadingsExtractor, MainContentExtractor } from './extractor/content.js';
+import { HeadingsExtractor, MainContentExtractor, TableExtractor, ListExtractor } from './extractor/content.js';
 import { NavigationExtractor, FormExtractor } from './extractor/advanced.js';
+import { ImageExtractor, FrameExtractor } from './extractor/media.js';
 import logger from '../../utils/logger.js';
 
 // Register all extractors
@@ -21,6 +22,12 @@ const extractors = [
   // Content extractors
   new HeadingsExtractor(),
   new MainContentExtractor(),
+  new TableExtractor(),
+  new ListExtractor(),
+  
+  // Media extractors
+  new ImageExtractor(),
+  new FrameExtractor(),
   
   // Advanced extractors
   new NavigationExtractor(),
