@@ -1,0 +1,362 @@
+@startuml
++formatData(data: any): string
++log(level: "DEBUG" | "INFO" | "WARN" | "ERROR", message: string, data?: any): void
++getColorForLevel(level: "DEBUG" | "INFO" | "WARN" | "ERROR"): string
+interface DOMExtractionConfig {
+    +maxTextLength?: number | undefined
+    +includeHidden?: boolean | undefined
+    +extractDepth?: "minimal" | "standard" | "comprehensive" | undefined
+    +customSelectors?: Record<string, string> | undefined
+}
+interface DOMElement {
+    +tagName: string
+    +id?: string | undefined
+    +classes?: string[] | undefined
+    +text?: string | undefined
+    +attributes?: Record<string, string> | undefined
+    +selector?: string | undefined
+    +role?: string | undefined
+    +isVisible?: boolean | undefined
+    +href?: string | undefined
+    +method?: string | undefined
+    +submitText?: string | undefined
+    +inputs?: any[] | undefined
+}
+interface DOMSnapshot {
+    +url: string
+    +title: string
+    +timestamp: number
+    +metadata?: Record<string, any> | undefined
+    +elements?: { [key: string]: DOMElement[]; } | undefined
+    +content?: { [key: string]: any; } | undefined
+    +_diagnostic?: { extractorsRun: string[]; extractorResults: { [extractorName: string]: { duration?: number | undefined; success?: boolean | undefined; resultType?: string | undefined; resultSize?: string | number | undefined; error?: string | undefined; stack?: string | undefined; selector?: string | undefined; }; }; extractionTim...
+}
+interface DOMExtractorStrategy {
+    +name: string
+    +selector: string
+    +extract(page: Page, config: DOMExtractionConfig): Promise<any>
+    +isApplicable(config: DOMExtractionConfig): boolean
+}
+class DOMExtractorRegistry {
+    -{static} extractors: Map<string, DOMExtractorStrategy>
+    +{static} register(extractor: DOMExtractorStrategy): void
+    +{static} get(name: string): DOMExtractorStrategy | undefined
+    +{static} getAll(): DOMExtractorStrategy[]
+    +{static} getApplicable(config: DOMExtractionConfig): DOMExtractorStrategy[]
+}
+abstract class BaseExtractor implements DOMExtractorStrategy {
+    +name: string
+    +selector: string
+    +{abstract} extract(page: Page, config: DOMExtractionConfig): Promise<any>
+    +isApplicable(config: DOMExtractionConfig): boolean
+    #safeEvaluate(page: Page, fn: (selector: string) => T, fallback: T): Promise<T>
+    #truncateText(text: string, maxLength?: number | undefined): string
+}
+class ButtonExtractor extends BaseExtractor implements DOMExtractorStrategy {
+    +extract(page: Page, config: DOMExtractionConfig): Promise<DOMElement[]>
+}
+class InputExtractor extends BaseExtractor implements DOMExtractorStrategy {
+    +extract(page: Page, config: DOMExtractionConfig): Promise<DOMElement[]>
+}
+class LinkExtractor extends BaseExtractor implements DOMExtractorStrategy {
+    +extract(page: Page, config: DOMExtractionConfig): Promise<DOMElement[]>
+}
+class LandmarkExtractor extends BaseExtractor implements DOMExtractorStrategy {
+    +extract(page: Page, config: DOMExtractionConfig): Promise<DOMElement[]>
+}
+class TitleExtractor extends BaseExtractor {
+    +extract(page: Page, config: DOMExtractionConfig): Promise<string>
+    +isApplicable(): boolean
+}
+class URLExtractor extends BaseExtractor {
+    +extract(page: Page): Promise<string>
+    +isApplicable(): boolean
+}
+class MetaDescriptionExtractor extends BaseExtractor {
+    +extract(page: Page): Promise<string>
+}
+class HeadingsExtractor extends BaseExtractor {
+    +extract(page: Page, config: DOMExtractionConfig): Promise<{ level: number; text: string; }[]>
+}
+class MainContentExtractor extends BaseExtractor {
+    +extract(page: Page, config: DOMExtractionConfig): Promise<string>
+}
+class NavigationExtractor extends BaseExtractor {
+    +extract(page: Page, config: DOMExtractionConfig): Promise<any>
+}
+class FormExtractor extends BaseExtractor {
+    +extract(page: Page, config: DOMExtractionConfig): Promise<any>
+}
+class PageAnalyzer {
+    -{static} defaultConfig: DOMExtractionConfig
+    +{static} extractSnapshot(page: Page, config?: Partial<DOMExtractionConfig>): Promise<DOMSnapshot>
+    +{static} extractLiteSnapshot(page: Page): Promise<DOMSnapshot>
+    +{static} extractComprehensiveSnapshot(page: Page): Promise<DOMSnapshot>
+    +{static} extractSpecific(page: Page, extractorNames: string[]): Promise<Partial<DOMSnapshot>>
+}
+interface Action {
+    +type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"
+    +selector?: string | undefined
+    +element?: string | undefined
+    +value?: string | undefined
+    +question?: string | undefined
+    +description?: string | undefined
+    +selectorType: "css" | "xpath" | "text"
+    +maxWait: number
+    +previousUrl?: string | undefined
+}
+interface ActionHistoryEntry {
+    +action: Action
+    +result: ActionResult
+    +timestamp: number
+}
+interface ElementContext {
+    +previousAttempts: string[]
+    +startTime: number
+    +timeoutPerStrategy: number
+    +lastError?: Error | undefined
+}
+interface ElementStrategy {
+    +name: string
+    +priority: number
+    +canHandle(page: Page, action: Action, context: ElementContext): Promise<boolean>
+    +findElement(page: Page, action: Action, context: ElementContext): Promise<ElementHandle<Node> | null>
+}
+abstract class BaseElementStrategy implements ElementStrategy {
+    +name: string
+    +priority: number
+    +{abstract} canHandle(page: Page, action: Action, context: ElementContext): Promise<boolean>
+    +{abstract} findElement(page: Page, action: Action, context: ElementContext): Promise<ElementHandle<Node> | null>
+    #safeWaitForSelector(page: Page, selector: string, timeout: number): Promise<boolean>
+    #finalizeElement(element: ElementHandle<Node> | null, action: Action): Promise<ElementHandle<Node> | null>
+    #logSuccess(selector: string, context: ElementContext): void
+}
+class DirectSelectorStrategy extends BaseElementStrategy {
+    +canHandle(page: Page, action: Action): Promise<boolean>
+    +findElement(page: Page, action: Action, context: ElementContext): Promise<ElementHandle<Node> | null>
+}
+class IdSelectorStrategy extends BaseElementStrategy {
+    +canHandle(page: Page, action: Action): Promise<boolean>
+    +findElement(page: Page, action: Action, context: ElementContext): Promise<ElementHandle<Node> | null>
+}
+class InputPatternStrategy extends BaseElementStrategy {
+    -inputSelectors: string[]
+    +canHandle(page: Page, action: Action): Promise<boolean>
+    +findElement(page: Page, action: Action, context: ElementContext): Promise<ElementHandle<Node> | null>
+}
+class RoleBasedStrategy extends BaseElementStrategy {
+    +canHandle(page: Page, action: Action): Promise<boolean>
+    +findElement(page: Page, action: Action, context: ElementContext): Promise<ElementHandle<Node> | null>
+}
+class LinkStrategy extends BaseElementStrategy {
+    +canHandle(page: Page, action: Action): Promise<boolean>
+    +findElement(page: Page, action: Action, context: ElementContext): Promise<ElementHandle<Node> | null>
+}
+class SingleElementStrategy extends BaseElementStrategy {
+    +canHandle(page: Page, action: Action): Promise<boolean>
+    +findElement(page: Page, action: Action, context: ElementContext): Promise<ElementHandle<Node> | null>
+}
+class ElementFinder {
+    -strategies: ElementStrategy[]
+    +registerStrategy(strategy: ElementStrategy): void
+    +findElement(page: Page, action: Action): Promise<ElementHandle<Node> | null>
+    +getAlternativeSuggestions(page: Page, selector: string): Promise<string[]>
+}
++testExtractors(page: Page): Promise<void>
++generatePageSummary(page: Page, domSnapshot: any): Promise<string>
+interface GraphContext {
+    +browser?: Browser | undefined
+    +page?: Page | undefined
+    +action?: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; } | undefined
+    +retries?: number | undefined
+    +history: string[]
+    +actionHistory?: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }[] | undefined
+    +actionFeedback?: string | undefined
+    +startTime?: number | undefined
+    +lastScreenshot?: string | undefined
+    +userGoal?: string | undefined
+    +successfulActions?: string[] | undefined
+    +lastActionSuccess?: boolean | undefined
+    +successCount?: number | undefined
+    +previousPageState?: any
+    +milestones?: string[] | undefined
+    +recognizedMilestones?: string[] | undefined
+    +pageContent?: string | undefined
+    +pageSummary?: string | undefined
+    +lastSelector?: string | undefined
+    +compressedHistory?: string[] | undefined
+}
++launchBrowser(): Promise<Browser>
++createPage(browser: Browser): Promise<Page>
++doRetry(fn: () => Promise<T>, retries?: number, delayMs?: number): Promise<T>
++verifyElementExists(page: Page, selector: string, selectorType?: string): Promise<{ exists: boolean; count: number; suggestion: string | null; }>
++getElement(page: Page, action: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }): Promise<ElementHandle<Node> | null>
++captureCloseMatches(page: Page, failedSelector: string): Promise<void>
++textSimilarity(a: string, b: string): number
++findBestMatch(page: Page, reference: string): Promise<string | null>
++buildSelectorFromMatch(match: any): string
++getPageState(page: Page): Promise<object>
++extractDOMSnapshotLite(page: Page): Promise<any>
++extractDOMSnapshot(page: Page): Promise<any>
++verifyAction(page: Page, action: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }): Promise<boolean>
++compressHistory(history: string[], maxItems?: number): string[]
++findRepeatedPatterns(history: string[]): { pattern: string; count: number; success: boolean; }[]
++navigate(page: Page, url: string): Promise<boolean>
+class AgentState {
+    -_stopRequested: boolean
+    -_lastValidState: any
+    +requestStop(): void
+    +clearStop(): void
+    +isStopRequested(): boolean
+    +setLastValidState(state: any): void
+    +getLastValidState(): any
+    -{static} _instance: AgentState | null
+    +{static} getInstance(): AgentState
+}
++initializeMilestones(ctx: GraphContext): void
++checkMilestones(ctx: GraphContext, state: any): void
++hasMilestone(ctx: GraphContext, milestone: string): boolean
++getNextMilestone(ctx: GraphContext): string | null
+class ContextManager {
+    +initializeContext(ctx: GraphContext): GraphContext
+    +buildOptimizedContext(ctx: GraphContext): Promise<string>
+    +filterMostRelevantElements(elements: any[], maxCount: number): any[]
+    +updatePageState(ctx: GraphContext, page: Page): Promise<GraphContext>
+    +saveContext(ctx: GraphContext): void
+}
+interface PageState {
+    +url: string
+    +title: string
+    +domSnapshot?: any
+}
++detectProgress(ctx: GraphContext, previousState: PageState | null, currentState: PageState | null): void
++calculateProgressPercentage(ctx: GraphContext): number
++isStuck(ctx: GraphContext): boolean
++getProgressSummary(ctx: GraphContext): string
++runStateMachine(ctx: GraphContext): Promise<void>
++isRedundantAction(currentAction: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }, history: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }[]): boolean
++generateActionFeedback(ctx: GraphContext): string
++registerState(name: string, handler: StateHandler): void
++shuffleArray(array: T[]): T[]
++createMockStateHandler(returnValue: string): StateHandler
++createMockPage(): Page
++createMockPage(options?: { url?: string | undefined; title?: string | undefined; content?: string | undefined; selectors?: Record<string, any> | undefined; }): Page
++createMockBrowser(mockPage?: Page | undefined): Browser
++createTestContext(options?: { userGoal?: string | undefined; history?: string[] | undefined; page?: Page | undefined; browser?: Browser | undefined; action?: Action | undefined; }): GraphContext
++delay(ms: number): Promise<void>
+interface LLMProcessor {
+    +generateNextAction(state: object, context: GraphContext): Promise<{ type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; } | null | undefined>
+}
+interface BrowserState {
+    +url: string
+    +title: string
+    +screenshot?: string | undefined
+    +domHash: string
+    +interactiveElements: string[]
+}
+interface AgentContext {
+    +currentState: BrowserState
+    +actionHistory: { action: Action; result: ActionResult; timestamp: number; }[]
+    +llmSessionState: { model: string; temperature: number; retryCount: number; }
+    +recoveryState: { lastError: string; errorCount: number; fallbackTriggered: boolean; }
+    +persistence: { sessionId: string; storageKey: string; autoSaveInterval: number; }
+}
+interface StateTransition {
+    +nextState: string
+    +contextUpdate: Partial<AgentContext>
+}
+class ActionValidator {
+    -context: AgentContext
+    +validate(action: Action): Promise<Action>
+    -checkAgainstState(action: Action): Promise<void>
+    -addContextualDefaults(action: Action): Action
+}
+class ElementVerifier {
+    -context: AgentContext
+    +verify(selector: string | undefined, selectorType?: string): Promise<boolean>
+}
+class ActionExtractor {
+    -validator: ActionValidator
+    -elementVerifier: ElementVerifier
+    -context?: AgentContext | undefined
+    +processRawAction(rawText: string): Action | null
+    -extractFromJson(text: string): Action | null
+    -extractFromKeyValuePairs(text: string): Action | null
+    -extractFromLoosePatterns(text: string): Action | null
+    -parseDeferToHuman(text: string): Action | null
+    -normalizeActionObject(obj: any): Action
+    +{static} extract(rawText: string): Action | null
+}
+abstract class BaseLLMProcessor implements LLMProcessor {
+    #lastContext: ConversationMessage[]
+    #{abstract} processPrompt(prompt: string, systemPrompt: string): Promise<string>
+    #getSystemPrompt(): string
+    #buildFeedbackSection(context: GraphContext): string
+    #sanitizeUserMessage(message: string): string
+    #updateContext(userMessage: string, assistantResponse: string): void
+    +generateNextAction(state: object, context: GraphContext): Promise<{ type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; } | null | undefined>
+    #{static} SYSTEM_PROMPT: string
+}
+class OllamaProcessor extends BaseLLMProcessor {
+    #processPrompt(prompt: string, systemPrompt: string): Promise<string>
+}
+class GeminiProcessor extends BaseLLMProcessor {
+    -genAI: GoogleGenerativeAI
+    -model: any
+    #processPrompt(prompt: string, systemPrompt: string): Promise<string>
+}
+class OpenAIProcessor extends BaseLLMProcessor {
+    #processPrompt(prompt: string, systemPrompt: string): Promise<string>
+}
+interface SuccessPattern {
+    +actionType: string
+    +selector?: string | undefined
+    +domain: string
+    +successCount: number
+    +lastSuccess: string
+}
+class SuccessPatterns {
+    -patterns: SuccessPattern[]
+    -filePath: string
+    -isInFrequentFailureMode: boolean
+    -failureCount: number
+    -lastFailureTime: number
+    -loadPatterns(): void
+    +savePatterns(): void
+    +recordSuccess(action: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }, domain: string): void
+    -isSignificantNavigation(action: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }, domain: string): boolean
+    +getSuggestionsForDomain(domain: string): string[]
+    +recordFailure(): void
+    +resetFailures(): void
+}
++clickHandler(ctx: GraphContext): Promise<string>
++inputHandler(ctx: GraphContext): Promise<string>
++navigateHandler(ctx: GraphContext): Promise<string>
++waitHandler(ctx: GraphContext): Promise<string>
++handleFailureHandler(ctx: GraphContext): Promise<string>
++terminateHandler(ctx: GraphContext): Promise<string>
++getPageStateHandler(ctx: GraphContext): Promise<string>
++promptUser(question: string): Promise<string>
++sendHumanMessageHandler(ctx: GraphContext): Promise<string>
++runGraph(): Promise<void>
++stopAgent(): Promise<void>
++safeEvaluateWithVisibility(page: Page, fn: string | Function, fallback: T): Promise<T>
++buildSelectorScript(): string
++mergeContexts(initial: Partial<AgentContext>, saved: any): AgentContext
+class InMemoryStorageAdapter {
+    -store: Record<string, any>
+    +load(key: string): any
+    +save(key: string, data: any): void
+}
+class ContextManager {
+    -storage: InMemoryStorageAdapter
+    +loadContext(initial: Partial<AgentContext>): AgentContext
+    +saveContext(context: AgentContext): void
+    -sanitizeContext(context: AgentContext): object
+}
+class RecoveryEngine {
+    -context: AgentContext
+    +handleFailure(error: Error): Promise<StateTransition>
+}
++getPageState(page: Page): Promise<object>
+@enduml

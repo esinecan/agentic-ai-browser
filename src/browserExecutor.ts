@@ -3,9 +3,9 @@ import dotenv from "dotenv";
 import { z } from "zod";
 import logger from './utils/logger.js';
 // Ensure DOM extractors are registered
-import './core/dom-extraction/initialize.js';
+import './core/page/initialize.js';
 // Import the new DOM extraction system
-import { PageAnalyzer } from './core/dom-extraction/PageAnalyzer.js';
+import { PageAnalyzer } from './core/page/analyzer.js';
 
 dotenv.config();
 
@@ -180,7 +180,7 @@ export async function verifyElementExists(
 }
 
 // Import the new ElementFinder
-import { elementFinder } from "./core/element-selection/ElementFinder.js";
+import { elementFinder } from "./core/elements/finder.js";
 
 // Helper: Get an element based on the action's selector with improved error handling
 export async function getElement(

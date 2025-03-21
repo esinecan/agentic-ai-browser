@@ -2,13 +2,13 @@
 
 - Head over to https://github.com and search for "most starred repositories this month." Click on the first result. If it has over 10k stars, summarize what the project does. If not, go to the second-highest one and repeat the process.  
 
-- Navigate to https://www.nypl.org. Search for "The Catcher in the Rye." Check if it’s available at any physical branch. If yes, provide the location. If not, check if an e-book version is available. If neither, tell the user they’re out of luck.  
+- Navigate to https://www.nypl.org. Search for "The Catcher in the Rye." Check if it’s available at any physical branch's bookshelf. If yes, provide the location. If not, check if an e-book version is available. If neither, tell the user they’re out of luck.  
 
 - Search "best deals on wireless earbuds" on https://www.duckduckgo.com. Browse through the first few results and pick one that mentions a discount. Extract the discount percentage and where it's available, then relay that information. If no discounts are found, say "no luck today."  
 
 - Open https://en.wikipedia.org/wiki/Special:Random. Read the first paragraph. If it’s something historical or scientific, summarize it in two sentences. If it’s about a person, tell the user what they were famous for. If it’s something boring, just give them the title and say "meh."  
 
-- Visit https://www.flightaware.com. Look up flight "AA100" from New York to London. If the flight is "On Time," say "all good." If it’s delayed, find out by how long and mention the reason, if available. If the flight has landed, tell them the time it arrived.  
+- Visit https://www.flightaware.com. We'll look up flight "AA100" from New York to London. Fill the search inout and hit enter. Then wait for a turn for the page to load. It's a slow one. If the flight has departed or landed, say "it's gone bro. you might as well relax" If it's still expected to depart, given I'm about an hour away from the airport, determine how panicked should I be and inform me in the appropriate tone.
 
 - Instead of searching, open https://www.ssllabs.com/ssltest/. Enter "example.com" and run the test. If the SSL rating is A, say "good to go." If it’s B or lower, tell the user they might want to be careful. If the site has no SSL, say "uh-oh."  
 
@@ -24,9 +24,9 @@
 
 - Go to https://www.godaddy.com and search for "coolprojectidea.com" and see if it’s taken. If it is, try alternatives like appending"2025" or "AI" to the name, or you know, create variations until you find a usable one.
 
-- Find a list of countries by searching on www.duckduckgo.com and pick a random country and tell the user its capital but from your own memory. If they want more info, offer to provide its population and time zone. but this time population info must be current. so go to duckduckgo again and search that country. Find a link to wiki or some other encyclopedic source and click. Tell the user the current population.
+- Find a list of countries by searching on www.duckduckgo.com. go to first search result and pick a random country. Tell the user its capital but from your own memory. If they want more info, offer to provide its population and time zone. but this time population info must be current. so go to duckduckgo again and search that country + population. Find a link to wiki or some other encyclopedic source and click. Tell the user the current population. Then do the same for the time zone.
 
-- Visit https://www.reddit.com/r/memes. Look at the top post of the day. Describe the meme format and whether it’s a trending joke or a classic template.
+- Visit https://www.reddit.com/r/memes. Look at the top post of the day. try to figure out what it's about. is it a meme? who is it memeing?
 
 - Take the sentence: "Artificial intelligence is changing the world in ways we never imagined." Go to https://www.grammarly.com/plagiarism-checker and paste it in. If it’s flagged as unoriginal, find where it’s from and tell the user.
 

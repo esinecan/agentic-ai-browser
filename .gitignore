@@ -1,11 +1,36 @@
+# Dependencies
 node_modules/
+npm-debug.log
+
+# Build output
 dist/
+.build/
 
-logs/
-.github/
-.history/
+# Test files
+coverage/
+.nyc_output/
+
+# IDE files
 .vscode/
-screenshots/
-*.log
+.github/
+.idea/
+*.iml
+.history/
+logs/
 
+# Environment files
 .env
+.env.local
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Screenshots
+screenshots/
+data/
+
+# Temporary files
+tmp/
+*.tmp
+*.bak

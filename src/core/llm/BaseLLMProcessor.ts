@@ -1,6 +1,6 @@
 import { LLMProcessor } from "./llmProcessor.js";
 import { GraphContext } from "../../browserExecutor.js";
-import { ActionExtractor } from "../../core/action-handling/ActionExtractor.js";
+import { ActionExtractor } from '../actions/extractor.js';
 import logger from '../../utils/logger.js';
 import dotenv from "dotenv";
 dotenv.config();

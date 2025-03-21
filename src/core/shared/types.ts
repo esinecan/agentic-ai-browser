@@ -1,4 +1,9 @@
 // src/core/shared/types.ts
+import { Action, ActionResult } from '../actions/types.js';
+
+// Re-export Action types for backward compatibility
+export { Action, ActionResult } from '../actions/types.js';
+
 export interface BrowserState {
   url: string;
   title: string;
@@ -7,23 +12,11 @@ export interface BrowserState {
   interactiveElements: string[];
 }
 
-export interface Action {
-  type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage";
-  selector?: string;
-  element?: string;
-  value?: string;
-  question?: string;
-  description?: string;
-  selectorType: "css" | "xpath" | "text";
-  maxWait: number;
-  previousUrl?: string;
-}
-
 export interface AgentContext {
   currentState: BrowserState;
   actionHistory: Array<{
     action: Action;
-    result: 'success' | 'partial' | 'fail';
+    result: ActionResult;
     timestamp: number;
   }>;
   llmSessionState: {

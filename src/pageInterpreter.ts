@@ -3,8 +3,8 @@ import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 import { Page } from 'playwright';
 // Import the new DOM extraction system
-import { PageAnalyzer } from './core/dom-extraction/PageAnalyzer.js';
-import { DOMSnapshot, DOMElement } from './core/dom-extraction/DOMExtractor.js';
+import { PageAnalyzer } from './core/page/analyzer.js';
+import { DOMSnapshot, DOMElement } from './core/page/types.js';
 
 /**
  * Returns a structured representation of the page content using the DOM extraction system.
@@ -27,7 +27,7 @@ export async function generatePageSummary(page: Page, domSnapshot: any): Promise
   // Main content areas from landmarks - Add square brackets
   if (fullSnapshot.elements?.landmarks?.length) {
     summary += "MAIN CONTENT AREAS:\n";
-    fullSnapshot.elements.landmarks.forEach(landmark => {
+    fullSnapshot.elements.landmarks.forEach((landmark: DOMElement) => {
       if (landmark.text?.trim()) {
         const cleanText = "[" + landmark.text.replace(/\t/g, '').trim() + "]"; // Remove tab characters but keep newlines
         summary += `[${landmark.role}] ${cleanText.substring(0, 600)}${cleanText.length > 600 ? '...' : ''}\n`; // Double limit from 300
@@ -44,7 +44,7 @@ export async function generatePageSummary(page: Page, domSnapshot: any): Promise
     const htmlContent = await page.content();
     const $ = cheerio.load(htmlContent);
     $('script, style, svg, noscript, iframe, meta, link').remove();
-    const bodyText = "[" + $('body').text().replace(/\t/g, '][').trim() + "]"; // Remove tabs but keep newlines
+    const bodyText = "[" + $('body').text().replace(/\t/g, '').replace(/\n/g, '').trim() + "]"; // Remove tabs but keep newlines
     summary += `PAGE CONTENT:\n${bodyText.substring(0, 10000)}${bodyText.length > 10000 ? '...' : ''}\n\n`; // Double limit from 5000
   }
   
