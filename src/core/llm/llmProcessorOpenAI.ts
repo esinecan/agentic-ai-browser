@@ -76,5 +76,24 @@ class OpenAIProcessor extends BaseLLMProcessor {
   }
 }
 
+// In the RESPONSE_SCHEMA object:
+const RESPONSE_SCHEMA = {
+  properties: {
+    type: {
+      type: "string",
+      enum: ["click", "input", "navigate", "wait", "sendHumanMessage", "notes"]
+    },
+    operation: {
+      type: "string",
+      enum: ["add", "read"],
+      description: "Operation to perform with notes (required when type is 'notes')"
+    },
+    note: {
+      type: "string",
+      description: "Content of the note to add (required when operation is 'add')"
+    }
+  },
+};
+
 // Export a singleton instance
 export const openaiProcessor = new OpenAIProcessor();

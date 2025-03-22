@@ -1,10 +1,10 @@
-- Open https://www.xe.com. Find the currency converter and check the exchange rate from USD to EUR. If it's below 1.05, say 'bad time to exchange.' If it's above 1.10, say 'might be a good time to buy EUR.' Otherwise, just give the number.  
+- Open https://www.xe.com. Click the convert button and check the exchange rate from USD to EUR. If it's below 1.05, say 'bad time to exchange.' If it's above 1.10, say 'might be a good time to buy EUR.' Otherwise, just give the number.  
 
 - Head over to https://github.com and search for 'most starred repositories this month.' Click on the first result. If it has over 10k stars, summarize what the project does. If not, go to the second-highest one and repeat the process.  
 
 - Navigate to https://www.nypl.org. Search for 'The Catcher in the Rye.' Check if it's available at any physical branch's bookshelf. If yes, provide the location. If not, check if an e-book version is available. If neither, tell the user they're out of luck.  
 
-- Search 'best deals on wireless earbuds' on https://www.duckduckgo.com. Browse through the first few results and pick one that mentions a discount. Extract the discount percentage and where it's available, then relay that information. If no discounts are found, say 'no luck today.'  
+- Search 'best deals on wireless earbuds' on https://www.duckduckgo.com. Browse through the first five results and write down their prices via the notes action. Extract the discount percentage and where it's available, write that down too. once you're done with writing down 5 items (check if you're done by reading the notes after each write) make two recommendations to the user: one for best price and one for best discount (if applicable)
 
 - Open https://en.wikipedia.org/wiki/Special:Random. Read the first paragraph. If it's something historical or scientific, summarize it in two sentences. If it's about a person, tell the user what they were famous for. If it's something boring, just give them the title and say 'meh.'  
 

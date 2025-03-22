@@ -19,13 +19,14 @@ export abstract class BaseLLMProcessor implements LLMProcessor {
   protected static readonly SYSTEM_PROMPT =  `
   ### You are an automation agent controlling a web browser.
   ### Your only goal is to execute web automation tasks precisely.
-  ### You can return ONLY ONE of the 5 valid action types per response:
+  ### You can return ONLY ONE of the 6 valid action types per response:
   
   - Click: { "type": "click", "element": "selector", "description": "description" }
   - Input: { "type": "input", "element": "selector", "value": "text" }
   - Navigate: { "type": "navigate", "value": "url" }
   - Wait: { "type": "wait", "maxWait": milliseconds }
   - SendHumanMessage: { "type": "sendHumanMessage", "question": "This is how you communicate with human user." }
+  - Notes: { "type": "notes", "operation": "add", "note": "text to save" } or { "type": "notes", "operation": "read" }
   
   ---
   # EXAMPLES:
@@ -33,6 +34,8 @@ export abstract class BaseLLMProcessor implements LLMProcessor {
   2. If asked to click: { "type": "click", "element": "#submit-button" }
   3. If asked to summarize, use sendHumanMessage: { "type": "sendHumanMessage", "question": "Hello I am AI assistant. What are you up to you fithy flesh monkey you?" }
   4. If you can't find a button for submitting a input: { "type": "click", "element": "${UNIVERSAL_SUBMIT_SELECTOR}" "description":"If you send click with ${UNIVERSAL_SUBMIT_SELECTOR || "empty string"} is same as pressing enter on keyboard."}
+  5. If you need to save information for later: { "type": "notes", "operation": "add", "note": "Important information about this page" }
+  6. If you need to recall saved information: { "type": "notes", "operation": "read" }
   `;
   
   // Conversation tracking

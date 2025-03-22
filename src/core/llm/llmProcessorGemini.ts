@@ -21,7 +21,7 @@ const RESPONSE_SCHEMA = {
     type: {
       type: SchemaType.STRING,
       description: "The type of action to be performed.",
-      enum: ["click", "input", "navigate", "wait", "sendHumanMessage"]
+      enum: ["click", "input", "navigate", "wait", "sendHumanMessage", "notes"]
     },
     element: {
       type: SchemaType.STRING,
@@ -42,6 +42,15 @@ const RESPONSE_SCHEMA = {
     maxWait: {
       type: SchemaType.NUMBER,
       description: "The maximum time to wait in milliseconds (only for wait action)."
+    },
+    operation: {
+      type: SchemaType.STRING,
+      enum: ["add", "read"],
+      description: "Operation to perform with notes (required when type is 'notes')"
+    },
+    note: {
+      type: SchemaType.STRING,
+      description: "Content of the note to add (required when operation is 'add')"
     }
   },
   required: ["type"]

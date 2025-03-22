@@ -29,6 +29,7 @@ Thumbs.db
 # Screenshots
 screenshots/
 data/
+notes/
 
 # Temporary files
 tmp/

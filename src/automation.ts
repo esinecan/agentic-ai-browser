@@ -24,6 +24,7 @@ import { waitHandler } from './core/action-handling/handlers/waitHandler.js';
 import { handleFailureHandler } from './core/action-handling/handlers/failureHandler.js';
 import { terminateHandler } from './core/action-handling/handlers/terminateHandler.js';
 import { getPageStateHandler } from './core/action-handling/handlers/pageStateHandler.js';
+import { notesHandler } from './core/action-handling/handlers/notesHandler.js';
 
 // Select LLM processor based on environment variable
 let llmProcessor: LLMProcessor;
@@ -350,6 +351,7 @@ registerState("wait", waitHandler);
 registerState("handleFailure", handleFailureHandler);
 registerState("terminate", terminateHandler);
 registerState("getPageState", getPageStateHandler);
+registerState("notes", notesHandler);
 
 // Rest of state handlers...
 // ...existing code...

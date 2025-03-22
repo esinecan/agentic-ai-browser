@@ -1,5 +1,5 @@
 import { Page, ElementHandle } from "playwright";
-import { Action } from "../actions/types.js";
+import { Action } from "../../browserExecutor.js";
 import { ElementStrategy, ElementContext } from "./types.js";
 import { DirectSelectorStrategy } from "./strategies/DirectSelectorStrategy.js";
 import { IdSelectorStrategy } from "./strategies/IdSelectorStrategy.js";
@@ -36,6 +36,12 @@ export class ElementFinder {
       strategyCount: this.strategies.length
     });
     
+    // Skip element finding for notes action type
+    if (action.type === 'notes') {
+      logger.debug('Skipping element finding for notes action');
+      return null;
+    }
+    
     const context: ElementContext = {
       previousAttempts: [],
       startTime: Date.now(),
@@ -45,7 +51,9 @@ export class ElementFinder {
     // Try each strategy in priority order
     for (const strategy of this.strategies) {
       try {
-        const canHandle = await strategy.canHandle(page, action, context);
+        // Type assertion to make TypeScript happy
+        const actionForStrategy = action as Exclude<Action, { type: 'notes' }>;
+        const canHandle = await strategy.canHandle(page, actionForStrategy, context);
         if (!canHandle) continue;
         
         logger.debug(`Trying element strategy: ${strategy.name}`, {
@@ -53,7 +61,7 @@ export class ElementFinder {
           type: action.type
         });
         
-        const element = await strategy.findElement(page, action, context);
+        const element = await strategy.findElement(page, actionForStrategy, context);
         if (element) {
           return element;
         }

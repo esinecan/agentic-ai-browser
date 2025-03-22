@@ -20,8 +20,7 @@ const RESPONSE_FORMAT = {
       properties: {
         type: {
           type: "string",
-          enum: ["click", "input", "navigate", "wait", "sendHumanMessage"],
-          description: "The type of action to be performed."
+          enum: ["click", "input", "navigate", "wait", "sendHumanMessage", "notes"]
         },
         element: {
           type: "string",
@@ -37,6 +36,15 @@ const RESPONSE_FORMAT = {
           type: "string",
           description: "A brief description of the action being performed.",
           nullable: true
+        },
+        operation: {
+          type: "string",
+          enum: ["add", "read"],
+          description: "Operation to perform with notes (required when type is 'notes')"
+        },
+        note: {
+          type: "string",
+          description: "Content of the note to add (required when operation is 'add')"
         }
       },
       required: ["type"],

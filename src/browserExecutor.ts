@@ -15,7 +15,7 @@ export const SIMILARITY_THRESHOLD = 0.7;
 
 // Define and export the action schema and type.
 export const ActionSchema = z.object({
-  type: z.enum(["click", "input", "navigate", "wait", "sendHumanMessage"]),
+  type: z.enum(["click", "input", "navigate", "wait", "sendHumanMessage", "notes"]),
   element: z.string().optional(),
   value: z.string().optional(),
   description: z.string().optional(),
@@ -23,6 +23,8 @@ export const ActionSchema = z.object({
   maxWait: z.number().optional().default(2000),
   question: z.string().optional(),
   previousUrl: z.string().optional(),
+  operation: z.enum(["add", "read"]).optional(),
+  note: z.string().optional(),
 });
 export type Action = z.infer<typeof ActionSchema>;
 
@@ -131,8 +133,9 @@ export async function verifyElementExists(
 
   try {
     // Create a mock action to use with the elementFinder
-    const mockAction: Action = {
-      type: "click",
+    // Fix: Use a more specific type that matches what elementFinder expects
+    const mockAction = {
+      type: "click" as "click", // Use a type assertion to specify exactly "click"
       element: selector,
       selectorType: selectorType as "css" | "xpath" | "text",
       maxWait: 2000
@@ -596,6 +599,9 @@ export async function verifyAction(page: Page, action: Action): Promise<boolean>
           success = true;
           return true;
         case "wait":
+          success = true;
+          return true;
+        case "notes": // Notes actions are verified separately by the notes handler
           success = true;
           return true;
         default:

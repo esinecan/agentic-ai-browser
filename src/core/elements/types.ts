@@ -1,5 +1,5 @@
-import { Page, ElementHandle } from "playwright";
-import { Action } from "../actions/types.js";
+import { Action } from "../../browserExecutor.js";
+import { ElementHandle, Page } from "playwright";
 
 /**
  * Context information for element finding operations
@@ -15,8 +15,9 @@ export interface ElementContext {
  * Core element strategy interface - represents a way to find elements
  */
 export interface ElementStrategy {
-  name: string;
-  priority: number;
+  readonly name: string;
+  readonly priority: number;
+  
   canHandle(page: Page, action: Action, context: ElementContext): Promise<boolean>;
   findElement(page: Page, action: Action, context: ElementContext): Promise<ElementHandle | null>;
 }

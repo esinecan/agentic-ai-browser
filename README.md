@@ -3,7 +3,9 @@
 An automated browser agent powered by LLMs for web automation tasks.
 
 ## Overview
-This project is a **sophisticated AI-driven web automation agent** that uses **Playwright** for browser interactions and **LLM integration** for intelligent decision-making. It's designed for **reliable, adaptable web automation** with robust element detection and contextual understanding.
+This project is a **AI-driven web automation agent** that uses **Playwright** for browser interactions and **LLM integration** for intelligent decision-making. It's designed for **reliable, adaptable web automation** with robust element detection and contextual understanding. It's single agent by design, and it doesn't require highly specialized models. Quite the opposite. It is built with getting solid benefit out of smaller models in mind. It can visit every single item in the first 5 search result pages, record its findings in a text file and notify you. You just talk to it in a natural speaking language.
+
+I do not want AI access to be centralized, picketed and gatekept from regular people. This software is built to reflect that.
 
 ## Features
 - **Agentic Web Automation** – Uses AI to decide and execute actions based on page understanding
@@ -15,6 +17,7 @@ This project is a **sophisticated AI-driven web automation agent** that uses **P
 - **Improved Resilience** – Enhanced retry logic with increased attempt limits
 - **Agent State Management** – Track and control agent execution state
 - **Manual Intervention** – Request human help when the agent is stuck
+- **Session Notes** – Save and retrieve information across multiple pages during a session
 - **Handles complex web navigation tasks** - Sometimes. Other times, well...
 - **Automatic action selection and execution** - Modular action structure allows easy extension
 - **Human-in-the-loop assistance when needed** - The LLM learns to consult the human when stuck in context, as well as repeated failure detection
@@ -187,6 +190,7 @@ Actions flow through a sophisticated pipeline with robust execution, verificatio
 - **Navigate**: URL normalization and navigation with relative URL support
 - **Wait**: Managed execution pauses with dynamic timing
 - **SendHumanMessage**: Contextual human assistance requests with screenshot capture
+- **Notes**: Save and retrieve information across multiple pages during a session
 
 #### Smart Execution Features:
 - **Universal Form Submission**: Special handling for Enter key presses
@@ -194,6 +198,7 @@ Actions flow through a sophisticated pipeline with robust execution, verificatio
 - **Element Focus Management**: Click-before-fill approach for reliable input
 - **URL Normalization**: Automatic conversion of relative URLs to absolute
 - **Action Context Enrichment**: Previous URL tracking and domain identification
+- **Session Notes**: Persist important information across page navigations
 
 #### Verification & Success Tracking:
 - **Type-Specific Verification**: Custom verification logic based on action type
@@ -238,7 +243,7 @@ The system uses a sophisticated state machine architecture for reliable executio
 #### Key States:
 - **start**: Initializes browser, page, and context objects
 - **chooseAction**: Requests next action from LLM with dynamic context enrichment
-- **[action types]**: Specialized handlers for each action type (click, input, navigate, etc.)
+- **[action types]**: Specialized handlers for each action type (click, input, navigate, notes, etc.)
 - **handleFailure**: Progressive retry logic with pattern recognition
 - **sendHumanMessage**: Human intervention interface with screenshot capture
 - **terminate**: Graceful shutdown and resource cleanup
@@ -255,6 +260,7 @@ The system uses a sophisticated state machine architecture for reliable executio
 - **Dynamic Progress Detection**: Identifies meaningful state changes between page states
 - **Element-Based Milestone Detection**: Recognizes achievements based on page elements
 - **Multi-Milestone Tracking**: Records completion across search, login, form, and other workflows
+- **Session Persistency**: Stores important information in notes for context across pages
 
 #### Context Enrichment:
 - **Action History Compression**: Condenses action history for efficient context
@@ -287,12 +293,28 @@ Support for multiple LLM backends with a unified interface:
 - **Task History**: Compressed action history
 - **Feedback**: Success/failure information and suggestions
 
+### 6. Notes System
+The agent can maintain persistent notes across pages during a browsing session:
+
+#### Core Functionality:
+- **Add Operation**: Save important information with current URL context
+- **Read Operation**: Retrieve previously saved notes during the session
+- **Automatic Timestamp Files**: Creates session-specific notes files with timestamps
+- **URL Association**: Automatically saves the current URL with each note
+
+#### Usage Examples:
+- **Research Tasks**: Collecting information across multiple pages
+- **Multi-step Processes**: Maintaining context across complex workflows
+- **Data Collection**: Gathering specific details from various sources
+- **Comparison Shopping**: Recording prices and details from different sites
+
 ---
 
 ## Troubleshooting & Logs
 - Logs are stored in logs directory with timestamps
 - Screenshots are saved to screenshots on failures
 - Page state snapshots are recorded before each action
+- Notes are saved in the ./notes directory with timestamped filenames
 - It's a lot more fun with visual browser:
 ```sh
 # Set in .env or use environment variable:
@@ -338,6 +360,7 @@ For using OpenAI and compatible APIs like DeepSeek:
 ✅ **Element selection strategies**
 ✅ **Manual intervention capabilities**
 ✅ **Fixed position element detection fix**
+✅ **Session notes system**
 🔜 **Workflow recording & replay**
 🔜 **Support for API-based automation**
 🔜 **Multi-tab and window handling**
