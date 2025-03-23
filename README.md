@@ -5,8 +5,6 @@ An automated browser agent powered by LLMs for web automation tasks.
 ## Overview
 This project is a **AI-driven web automation agent** that uses **Playwright** for browser interactions and **LLM integration** for intelligent decision-making. It's designed for **reliable, adaptable web automation** with robust element detection and contextual understanding. It's single agent by design, and it doesn't require highly specialized models. Quite the opposite. It is built with getting solid benefit out of smaller models in mind. It can visit every single item in the first 5 search result pages, record its findings in a text file and notify you. You just talk to it in a natural speaking language.
 
-I do not want AI access to be centralized, picketed and gatekept from regular people. This software is built to reflect that.
-
 ## Features
 - **Agentic Web Automation** – Uses AI to decide and execute actions based on page understanding
 - **Intelligent Page Interpretation** – Summarizes pages for better context and decision-making
