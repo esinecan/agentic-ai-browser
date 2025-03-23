@@ -268,7 +268,7 @@ registerState("start", async (ctx: GraphContext) => {
   const agentState = getAgentState();
   agentState.clearStop();
   
-  return "chooseAction";
+  return "setupBrowser";
 });
 
 registerState("chooseAction", async (ctx: GraphContext) => {
@@ -446,6 +446,43 @@ registerState("handleFailure", handleFailureHandler);
 registerState("terminate", terminateHandler);
 registerState("getPageState", getPageStateHandler);
 registerState("notes", notesHandler);
+
+// Add this new state handler after the other state registrations
+
+// New state to pause and allow user to set up browser before automation begins
+registerState("setupBrowser", async (ctx: GraphContext) => {
+  if (!ctx.page) {
+    throw new Error("No page available");
+  }
+  
+  const url = ctx.page.url();
+  const title = await ctx.page.title();
+  
+  logger.info('Browser opened, waiting for user to complete setup', {
+    url,
+    title
+  });
+  
+  // Prompt user to continue when ready
+  const userInput = await promptUser(`
+Browser is now open at: ${url}
+
+You can now:
+- Log into websites if needed
+- Authorize any browser permissions
+- Set up anything else required before automation begins
+
+Press Enter when you're ready to continue automation, or type 'exit' to quit: `);
+  
+  // Check if user wants to exit
+  if (userInput.toLowerCase() === 'exit') {
+    logger.info('User requested to exit after browser launch');
+    return "terminate";
+  }
+  
+  logger.info('User completed setup, continuing with automation');
+  return "chooseAction";
+});
 
 // Export states so they can be accessed externally (for intervention handling)
 export { states };
