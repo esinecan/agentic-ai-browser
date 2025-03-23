@@ -4,6 +4,7 @@ import { runGraph, stopAgent } from "./automation.js";
 import { Page } from "playwright";
 import readline from 'readline';
 import logger from './utils/logger.js';
+import { getAgentState } from './utils/agentState.js';
 
 dotenv.config();
 
@@ -32,13 +33,15 @@ const rl = readline.createInterface({
   output: process.stdout
 });
 
-// Listen for the 'keypress' event
-process.stdin.on('keypress', async (str, key) => {
-  // Check if user pressed 'q'
-  if (key.name === 'q') {
-    console.log('\nStop key pressed. Requesting agent to stop gracefully...');
-    await stopAgent();
-    //logger.close();
+// Setup keypress event handling
+readline.emitKeypressEvents(process.stdin);
+if (process.stdin.isTTY) process.stdin.setRawMode(true);
+
+// Add keyboard shortcuts
+process.stdin.on('keypress', (str, key) => {
+  // Exit on Ctrl+C
+  if (key.ctrl && key.name === 'c') {
+    process.exit();
   }
 });
 
@@ -50,7 +53,7 @@ if (process.stdin.isTTY) {
 // Main execution
 (async () => {
   try {
-    console.log("Agent started. Press 'q' or Ctrl+C to stop gracefully.");
+    console.log("Agent started. Press Ctrl+C to stop gracefully.");
     await runGraph();
   } catch (error) {
     console.error("Fatal error:", error);

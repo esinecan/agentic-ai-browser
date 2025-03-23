@@ -26,6 +26,14 @@ import { terminateHandler } from './core/action-handling/handlers/terminateHandl
 import { getPageStateHandler } from './core/action-handling/handlers/pageStateHandler.js';
 import { notesHandler } from './core/action-handling/handlers/notesHandler.js';
 
+// Add imports for user-defined functions
+import { 
+  processFunctionCall, 
+  isUserFunctionCall, 
+  isListFunctionsRequest,
+  listAvailableFunctions 
+} from './core/user-functions/functionParser.js';
+
 // Select LLM processor based on environment variable
 let llmProcessor: LLMProcessor;
 switch(process.env.LLM_PROVIDER?.toLowerCase()) {
@@ -52,6 +60,51 @@ function promptUser(question: string): Promise<string> {
       resolve(answer);
     });
   });
+}
+
+// Helper function to process user function calls
+async function processUserFunctionCall(ctx: GraphContext, functionCall: string): Promise<string> {
+  const expandedPrompt = await processFunctionCall(functionCall);
+  
+  if (expandedPrompt) {
+    // Ask if the user wants to replace or prepend to the current goal
+    const actionChoice = await promptUser(
+      "Function detected. Do you want to:\n" +
+      "1. Replace current goal with this function\n" +
+      "2. Prepend to current goal\n" +
+      "Enter 1 or 2: "
+    );
+    
+    if (actionChoice === "1") {
+      // Replace current goal
+      ctx.userGoal = expandedPrompt;
+      ctx.history.push(`User replaced goal with function: ${functionCall}`);
+      logger.info('Replaced goal with user function', {
+        original: functionCall,
+        newGoalPreview: expandedPrompt.substring(0, 100) + (expandedPrompt.length > 100 ? '...' : '')
+      });
+    } else {
+      // Prepend to current goal
+      ctx.userGoal = `${expandedPrompt}\n\nAdditional context: ${ctx.userGoal}`;
+      ctx.history.push(`User prepended function to goal: ${functionCall}`);
+      logger.info('Prepended user function to goal', {
+        original: functionCall,
+        newGoalPreview: ctx.userGoal.substring(0, 100) + (ctx.userGoal.length > 100 ? '...' : '')
+      });
+    }
+    
+    // Reinitialize milestones for the new goal
+    const { initializeMilestones } = await import('./core/automation/milestones.js');
+    initializeMilestones(ctx);
+    
+    ctx.actionFeedback = `👤 FUNCTION ACTIVATED: ${functionCall} has been processed and goal updated.`;
+  } else {
+    // If function processing failed
+    ctx.actionFeedback = `👤 FUNCTION ERROR: Failed to process "${functionCall}". Please check syntax and function name.`;
+    ctx.history.push(`Failed to process function call: "${functionCall}"`);
+  }
+  
+  return "chooseAction";
 }
 
 // Extract the sendHumanMessage handler to a standalone function
@@ -89,6 +142,8 @@ Recent actions: ${ctx.history.slice(-3).join("\n")}
 
 AI needs your help (screenshot saved to ${screenshotPath}):
 ${question}
+
+Tip: You can use ::functions to list available function templates.
 Your guidance:`;
     
     logger.info("Asking for human help", {
@@ -99,23 +154,57 @@ Your guidance:`;
     });
 
     const humanResponse = await promptUser(formattedQuestion);
-    const newGoal = await promptUser("Do you want to update the goal? (Leave empty to keep current goal): ");
-    if (newGoal.trim() !== "") {
-      ctx.userGoal = newGoal;
-      ctx.history.push(`User updated goal to: ${newGoal}`);
-      // Use the extracted initializeMilestones function from the milestones module
-      const { initializeMilestones } = await import('./core/automation/milestones.js');
-      initializeMilestones(ctx);
-    }
+    
+    // Handle special function commands
+    if (isListFunctionsRequest(humanResponse)) {
+      const functionsList = await listAvailableFunctions();
+      logger.info('User requested function list');
+      
+      // Show functions and ask for further input
+      const followupPrompt = `
+Available User Functions:
 
-    logger.info("Received human response", {
-      responsePreview: humanResponse.substring(0, 100)
-    });
-    
-    ctx.actionFeedback = `👤 HUMAN ASSISTANCE: ${humanResponse}`;
-    
-    ctx.history.push(`Asked human: "${question.substring(0, 50)}${question.length > 50 ? '...' : ''}"`);
-    ctx.history.push(`Human response: "${humanResponse.substring(0, 50)}${humanResponse.length > 50 ? '...' : ''}"`);
+${functionsList}
+
+Enter a function call like ::functionName("arg1") or new instructions:`;
+      
+      const followupResponse = await promptUser(followupPrompt);
+      
+      if (followupResponse.trim()) {
+        // Process the new input as if it was the original response
+        if (isUserFunctionCall(followupResponse)) {
+          return await processUserFunctionCall(ctx, followupResponse);
+        } else {
+          // Handle as regular input
+          ctx.actionFeedback = `👤 HUMAN ASSISTANCE: ${followupResponse}`;
+          ctx.history.push(`Human response: "${followupResponse.substring(0, 50)}${followupResponse.length > 50 ? '...' : ''}"`);
+        }
+      }
+    }
+    // Handle function calls
+    else if (isUserFunctionCall(humanResponse)) {
+      return await processUserFunctionCall(ctx, humanResponse);
+    }
+    // Handle regular input
+    else {
+      const newGoal = await promptUser("Do you want to update the goal? (Leave empty to keep current goal): ");
+      if (newGoal.trim() !== "") {
+        ctx.userGoal = newGoal;
+        ctx.history.push(`User updated goal to: ${newGoal}`);
+        // Use the extracted initializeMilestones function from the milestones module
+        const { initializeMilestones } = await import('./core/automation/milestones.js');
+        initializeMilestones(ctx);
+      }
+
+      logger.info("Received human response", {
+        responsePreview: humanResponse.substring(0, 100)
+      });
+      
+      ctx.actionFeedback = `👤 HUMAN ASSISTANCE: ${humanResponse}`;
+      
+      ctx.history.push(`Asked human: "${question.substring(0, 50)}${question.length > 50 ? '...' : ''}"`);
+      ctx.history.push(`Human response: "${humanResponse.substring(0, 50)}${humanResponse.length > 50 ? '...' : ''}"`);
+    }
     
     const currentUrl = ctx.page.url();
     if (currentUrl !== beforeHelpState.url) {
@@ -131,6 +220,21 @@ Your guidance:`;
     ctx.history.push(`Human interaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     return "handleFailure";
   }
+}
+
+// Fix the helper function's return type
+function createSendHumanMessageAction(question: string): {
+  type: "sendHumanMessage";
+  question: string;
+  selectorType: "css" | "text" | "xpath";
+  maxWait: number;
+} {
+  return {
+    type: 'sendHumanMessage' as const,  // Use 'as const' to ensure literal type
+    question,
+    selectorType: 'css' as const,
+    maxWait: 1000
+  };
 }
 
 // Register state handlers
@@ -278,12 +382,7 @@ registerState("chooseAction", async (ctx: GraphContext) => {
           lastFailedAction: failedActionType
         });
         
-        ctx.action = {
-          type: 'sendHumanMessage',
-          question: `I've tried ${ctx.retries} times to ${failedActionType} but keep failing. The page title is "${await ctx.page.title()}". What should I try next?`,
-          selectorType: 'css',
-          maxWait: 1000
-        };
+        ctx.action = createSendHumanMessageAction(`I've tried ${ctx.retries} times to ${failedActionType} but keep failing. The page title is "${await ctx.page.title()}". What should I try next?`);
         
         return "sendHumanMessage";
       }
@@ -300,12 +399,7 @@ registerState("chooseAction", async (ctx: GraphContext) => {
         ctx.action = { type: 'wait', maxWait: 2000, selectorType: 'css' };
         return "wait";
       } else {
-        ctx.action = {
-          type: 'sendHumanMessage',
-          question: `I seem to be stuck in a loop of waiting. The page title is "${await ctx.page.title()}". What should I try next?`,
-          selectorType: 'css',
-          maxWait: 1000
-        };
+        ctx.action = createSendHumanMessageAction(`I seem to be stuck in a loop of waiting. The page title is "${await ctx.page.title()}". What should I try next?`);
         return "sendHumanMessage";
       }
     }
@@ -353,17 +447,49 @@ registerState("terminate", terminateHandler);
 registerState("getPageState", getPageStateHandler);
 registerState("notes", notesHandler);
 
+// Export states so they can be accessed externally (for intervention handling)
+export { states };
+
 // Rest of state handlers...
 // ...existing code...
 
 // Exported function to run the entire automation graph.
 export async function runGraph(): Promise<void> {
   // Prompt the user for their automation goal
-  const userGoal = await promptUser("Please enter your goal for this automation: ");
+  const userGoalPrompt = "Please enter your goal for this automation:\n" +
+    "(Tip: You can use ::functions to list available function templates)";
+  const userGoal = await promptUser(userGoalPrompt);
+  
+  // Check for special commands
+  if (isListFunctionsRequest(userGoal)) {
+    const functionsList = await listAvailableFunctions();
+    console.log("\nAvailable User Functions:\n");
+    console.log(functionsList);
+    console.log("\n");
+    // Ask again after showing functions
+    return runGraph();
+  }
+  
+  // Process initial goal for function calls
+  let processedGoal = userGoal;
+  if (isUserFunctionCall(userGoal)) {
+    const expandedGoal = await processFunctionCall(userGoal);
+    if (expandedGoal) {
+      processedGoal = expandedGoal;
+      logger.info('Expanded user function for initial goal', {
+        original: userGoal,
+        expandedPreview: expandedGoal.substring(0, 100) + (expandedGoal.length > 100 ? '...' : '')
+      });
+      console.log("\nFunction expanded successfully!\n");
+    } else {
+      console.log("\nFunction processing failed. Using original input.\n");
+    }
+  }
+  
   // Initialize context with user goal and history
   const ctx: GraphContext = { 
     history: [],
-    userGoal,
+    userGoal: processedGoal,
     successfulActions: [],
     lastActionSuccess: false,
     successCount: 0,

@@ -1,0 +1,12 @@
+[
+  {
+    "name": "learnJargon", 
+    "args": ["topicOrArea"], 
+    "prompt": "I want to learn the jargon, the glossary of something. For instance if it's a code library, I'd first go to api docs of it to form a base understanding, then maybe look at stackoverflow or smth to see how people use it, then search it on google.com and look at top two results. I'd take notes in between. But if it's a memetic trend, I might look at knowourmeme, write notes, and then do a search on google.com etc. I want you to extrapolate these few shot examples and research the jargon of ${topicOrArea}, and whenever you visit a new source, if you're able to add items to glossary, I want you to write it down in the notes, and then move on to next source. Look at a few places, do some general or specific search on google, click on and read through first 5 results completely, really research the whole thang. take notes so that I can just read it and learn all I need. Once you're done let me know via sendHumanMessage"
+  },
+  {
+    "name": "howToWithThisTech", 
+    "args": ["techToBeUsed", "myUseCase"], 
+    "prompt": "I want to ${myUseCase} using ${techToBeUsed}. Can you go to a search engine website and first search for a basic tutorial for ${techToBeUsed}. Then click on its link and read it to front load your context and reduce hallucination likelihood. Then go to google.com again to see if there's something that is exactly what I'm intending to do, or very close, read that and write down notes. But if there isn't something very close, simply generalize from ${myUseCase} incrementally, performing multiple searches if necessary. Once you have accumulated enough info create a very detailed step by step guide by writing it down via notes action. Feel free to take up to four sequential actions (I suggest you use first turn for making a 3 section plan, then each oof the rest for a section) to prepare the write up. And then discuss with the user via sendHumanMessage."
+  }
+]

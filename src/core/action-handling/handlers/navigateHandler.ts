@@ -6,7 +6,13 @@ import logger from "../../../utils/logger.js";
 export async function navigateHandler(ctx: GraphContext): Promise<string> {
   if (!ctx.page || !ctx.action?.value) throw new Error("Invalid context");
 
-  logger.browser.action('navigate', {
+  logger.debug('Navigation details', { 
+    from: ctx.page.url(),
+    to: ctx.action.value,
+    options: { timeout: 10000, waitUntil: "domcontentloaded" }
+  });
+
+  logger.info('Browser Action: navigate', {
     url: ctx.action.value,
     currentUrl: ctx.page.url()
   });

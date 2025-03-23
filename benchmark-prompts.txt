@@ -4,7 +4,7 @@
 
 - Navigate to https://www.nypl.org. Search for 'The Catcher in the Rye.' Check if it's available at any physical branch's bookshelf. If yes, provide the location. If not, check if an e-book version is available. If neither, tell the user they're out of luck.  
 
-- Search 'best deals on wireless earbuds' on https://www.duckduckgo.com. Browse through the first five results and write down their prices via the notes action. Extract the discount percentage and where it's available, write that down too. once you're done with writing down 5 items (check if you're done by reading the notes after each write) make two recommendations to the user: one for best price and one for best discount (if applicable)
+- Search 'best deals on wireless earbuds' on https://www.google.com. Browse through the first five results and write down their prices via the notes action. Extract the discount percentage and where it's available, write that down too. once you're done with writing down 5 items (check if you're done by reading the notes after each write) make two recommendations to the user: one for best price and one for best discount (if applicable)
 
 - Open https://en.wikipedia.org/wiki/Special:Random. Read the first paragraph. If it's something historical or scientific, summarize it in two sentences. If it's about a person, tell the user what they were famous for. If it's something boring, just give them the title and say 'meh.'  
 
@@ -24,7 +24,7 @@
 
 - Go to https://www.godaddy.com and search for 'coolprojectidea.com' and see if it's taken. If it is, try alternatives like appending'2025' or 'AI' to the name, or you know, create variations until you find a usable one.
 
-- Find a list of countries by searching on www.duckduckgo.com. go to first search result and pick a random country. Tell the user its capital but from your own memory. If they want more info, offer to provide its population and time zone. but this time population info must be current. so go to duckduckgo again and search that country + population. Find a link to wiki or some other encyclopedic source and click. Tell user the current population. If he responds positively, do the same for the time zone.
+- Find a list of countries by searching on www.google.com. go to first search result and pick a random country. Tell the user its capital but from your own memory. If they want more info, offer to provide its population and time zone. but this time population info must be current. so go to google again and search that country + population. Find a link to wiki or some other encyclopedic source and click. Tell user the current population. If he responds positively, do the same for the time zone.
 
 - Visit https://www.reddit.com/r/memes. Look at the top post of the day. try to figure out what it's about. is it a meme? who is it memeing?
 

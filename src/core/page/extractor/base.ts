@@ -23,7 +23,7 @@ export abstract class BaseExtractor implements DOMExtractorStrategy {
     try {
       return await page.evaluate(fn, this.selector);
     } catch (error) {
-      logger.error(`Error evaluating in ${this.name} extractor`, { error });
+      logger.debug('Error in page evaluation', { error });
       return fallback;
     }
   }

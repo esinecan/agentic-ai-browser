@@ -350,6 +350,12 @@ For using OpenAI and compatible APIs like DeepSeek:
 
 ---
 
+## User-Defined Functions
+
+The agent supports user-defined function templates that can be invoked with a simple syntax:
+
+---
+
 ## Future Plans
 ✅ **Modular execution layer**
 ✅ **Action verification**
@@ -358,7 +364,6 @@ For using OpenAI and compatible APIs like DeepSeek:
 ✅ **Agent state management**
 ✅ **DOM extraction system**
 ✅ **Element selection strategies**
-✅ **Manual intervention capabilities**
 ✅ **Fixed position element detection fix**
 ✅ **Session notes system**
 🔜 **Workflow recording & replay**

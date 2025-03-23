@@ -1,7 +1,4 @@
 @startuml
-+formatData(data: any): string
-+log(level: "DEBUG" | "INFO" | "WARN" | "ERROR", message: string, data?: any): void
-+getColorForLevel(level: "DEBUG" | "INFO" | "WARN" | "ERROR"): string
 interface DOMExtractionConfig {
     +maxTextLength?: number | undefined
     +includeHidden?: boolean | undefined
@@ -112,8 +109,29 @@ class PageAnalyzer {
     +{static} extractComprehensiveSnapshot(page: Page): Promise<DOMSnapshot>
     +{static} extractSpecific(page: Page, extractorNames: string[]): Promise<Partial<DOMSnapshot>>
 }
+interface ElementContext {
+    +previousAttempts: string[]
+    +startTime: number
+    +timeoutPerStrategy: number
+    +lastError?: Error | undefined
+}
+interface ElementStrategy {
+    +name: string
+    +priority: number
+    +canHandle(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, context: ElementContext): Promise<boolean>
+    +findElement(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, context: ElementContext): Promise<ElementHandle<Node> | null>
+}
+abstract class BaseElementStrategy implements ElementStrategy {
+    +name: string
+    +priority: number
+    +{abstract} canHandle(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, context: ElementContext): Promise<boolean>
+    +{abstract} findElement(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, context: ElementContext): Promise<ElementHandle<Node> | null>
+    #safeWaitForSelector(page: Page, selector: string, timeout: number): Promise<boolean>
+    #finalizeElement(element: ElementHandle<Node> | null, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }): Promise<ElementHandle<Node> | null>
+    #logSuccess(selector: string, context: ElementContext): void
+}
 interface Action {
-    +type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"
+    +type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage"
     +selector?: string | undefined
     +element?: string | undefined
     +value?: string | undefined
@@ -127,27 +145,6 @@ interface ActionHistoryEntry {
     +action: Action
     +result: ActionResult
     +timestamp: number
-}
-interface ElementContext {
-    +previousAttempts: string[]
-    +startTime: number
-    +timeoutPerStrategy: number
-    +lastError?: Error | undefined
-}
-interface ElementStrategy {
-    +name: string
-    +priority: number
-    +canHandle(page: Page, action: Action, context: ElementContext): Promise<boolean>
-    +findElement(page: Page, action: Action, context: ElementContext): Promise<ElementHandle<Node> | null>
-}
-abstract class BaseElementStrategy implements ElementStrategy {
-    +name: string
-    +priority: number
-    +{abstract} canHandle(page: Page, action: Action, context: ElementContext): Promise<boolean>
-    +{abstract} findElement(page: Page, action: Action, context: ElementContext): Promise<ElementHandle<Node> | null>
-    #safeWaitForSelector(page: Page, selector: string, timeout: number): Promise<boolean>
-    #finalizeElement(element: ElementHandle<Node> | null, action: Action): Promise<ElementHandle<Node> | null>
-    #logSuccess(selector: string, context: ElementContext): void
 }
 class DirectSelectorStrategy extends BaseElementStrategy {
     +canHandle(page: Page, action: Action): Promise<boolean>
@@ -177,7 +174,7 @@ class SingleElementStrategy extends BaseElementStrategy {
 class ElementFinder {
     -strategies: ElementStrategy[]
     +registerStrategy(strategy: ElementStrategy): void
-    +findElement(page: Page, action: Action): Promise<ElementHandle<Node> | null>
+    +findElement(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }): Promise<ElementHandle<Node> | null>
     +getAlternativeSuggestions(page: Page, selector: string): Promise<string[]>
 }
 +testExtractors(page: Page): Promise<void>
@@ -185,10 +182,10 @@ class ElementFinder {
 interface GraphContext {
     +browser?: Browser | undefined
     +page?: Page | undefined
-    +action?: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; } | undefined
+    +action?: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; } | undefined
     +retries?: number | undefined
     +history: string[]
-    +actionHistory?: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }[] | undefined
+    +actionHistory?: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }[] | undefined
     +actionFeedback?: string | undefined
     +startTime?: number | undefined
     +lastScreenshot?: string | undefined
@@ -208,7 +205,7 @@ interface GraphContext {
 +createPage(browser: Browser): Promise<Page>
 +doRetry(fn: () => Promise<T>, retries?: number, delayMs?: number): Promise<T>
 +verifyElementExists(page: Page, selector: string, selectorType?: string): Promise<{ exists: boolean; count: number; suggestion: string | null; }>
-+getElement(page: Page, action: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }): Promise<ElementHandle<Node> | null>
++getElement(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }): Promise<ElementHandle<Node> | null>
 +captureCloseMatches(page: Page, failedSelector: string): Promise<void>
 +textSimilarity(a: string, b: string): number
 +findBestMatch(page: Page, reference: string): Promise<string | null>
@@ -216,7 +213,7 @@ interface GraphContext {
 +getPageState(page: Page): Promise<object>
 +extractDOMSnapshotLite(page: Page): Promise<any>
 +extractDOMSnapshot(page: Page): Promise<any>
-+verifyAction(page: Page, action: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }): Promise<boolean>
++verifyAction(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }): Promise<boolean>
 +compressHistory(history: string[], maxItems?: number): string[]
 +findRepeatedPatterns(history: string[]): { pattern: string; count: number; success: boolean; }[]
 +navigate(page: Page, url: string): Promise<boolean>
@@ -252,7 +249,7 @@ interface PageState {
 +isStuck(ctx: GraphContext): boolean
 +getProgressSummary(ctx: GraphContext): string
 +runStateMachine(ctx: GraphContext): Promise<void>
-+isRedundantAction(currentAction: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }, history: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }[]): boolean
++isRedundantAction(currentAction: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, history: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }[]): boolean
 +generateActionFeedback(ctx: GraphContext): string
 +registerState(name: string, handler: StateHandler): void
 +shuffleArray(array: T[]): T[]
@@ -263,7 +260,7 @@ interface PageState {
 +createTestContext(options?: { userGoal?: string | undefined; history?: string[] | undefined; page?: Page | undefined; browser?: Browser | undefined; action?: Action | undefined; }): GraphContext
 +delay(ms: number): Promise<void>
 interface LLMProcessor {
-    +generateNextAction(state: object, context: GraphContext): Promise<{ type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; } | null | undefined>
+    +generateNextAction(state: object, context: GraphContext): Promise<{ type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; } | null | undefined>
 }
 interface BrowserState {
     +url: string
@@ -312,7 +309,7 @@ abstract class BaseLLMProcessor implements LLMProcessor {
     #buildFeedbackSection(context: GraphContext): string
     #sanitizeUserMessage(message: string): string
     #updateContext(userMessage: string, assistantResponse: string): void
-    +generateNextAction(state: object, context: GraphContext): Promise<{ type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; } | null | undefined>
+    +generateNextAction(state: object, context: GraphContext): Promise<{ type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; } | null | undefined>
     #{static} SYSTEM_PROMPT: string
 }
 class OllamaProcessor extends BaseLLMProcessor {
@@ -341,8 +338,8 @@ class SuccessPatterns {
     -lastFailureTime: number
     -loadPatterns(): void
     +savePatterns(): void
-    +recordSuccess(action: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }, domain: string): void
-    -isSignificantNavigation(action: { type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; description?: string | undefined; question?: string | undefined; previousUrl?: string | undefined; }, domain: string): boolean
+    +recordSuccess(action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, domain: string): void
+    -isSignificantNavigation(action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, domain: string): boolean
     +getSuggestionsForDomain(domain: string): string[]
     +recordFailure(): void
     +resetFailures(): void
@@ -354,9 +351,23 @@ class SuccessPatterns {
 +handleFailureHandler(ctx: GraphContext): Promise<string>
 +terminateHandler(ctx: GraphContext): Promise<string>
 +getPageStateHandler(ctx: GraphContext): Promise<string>
++notesHandler(ctx: GraphContext): Promise<string>
+interface UserFunction {
+    +name: string
+    +args: string[]
+    +prompt: string
+}
++loadUserFunctions(): Promise<UserFunction[]>
++validateFunctionDefinitions(functions: any[]): UserFunction[]
++parseFunctionCall(input: string): { name: string; args: string[]; } | null
++processFunctionCall(input: string): Promise<string | null>
++isUserFunctionCall(input: string): boolean
++isListFunctionsRequest(input: string): boolean
++listAvailableFunctions(): Promise<string>
 +promptUser(question: string): Promise<string>
-+sexyPrint(text: string, delay?: number): Promise<void>
++processUserFunctionCall(ctx: GraphContext, functionCall: string): Promise<string>
 +sendHumanMessageHandler(ctx: GraphContext): Promise<string>
++createSendHumanMessageAction(question: string): { type: "sendHumanMessage"; question: string; selectorType: "css" | "text" | "xpath"; maxWait: number; }
 +runGraph(): Promise<void>
 +stopAgent(): Promise<void>
 +safeEvaluateWithVisibility(page: Page, fn: string | Function, fallback: T): Promise<T>

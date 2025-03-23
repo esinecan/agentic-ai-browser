@@ -49,6 +49,11 @@ export async function runStateMachine(ctx: GraphContext): Promise<void> {
       retries: ctx.retries || 0
     });
 
+    logger.debug('State context', { 
+      url: ctx.page?.url(), 
+      goal: ctx.userGoal?.substring(0, 100) + '...'
+    });
+
     try {
       totalActionCount++;
       if (ctx.lastActionSuccess) {

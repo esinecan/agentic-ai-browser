@@ -5,6 +5,9 @@ import { ButtonExtractor, InputExtractor, LinkExtractor } from '../core/page/ext
 
 export async function testExtractors(page: Page): Promise<void> {
   try {
+    // Change routine extractor testing to debug level
+    logger.debug('Running extractors on page', { url: page.url() });
+
     // Test some extractors directly
     const buttonExtractor = new ButtonExtractor();
     const inputExtractor = new InputExtractor();

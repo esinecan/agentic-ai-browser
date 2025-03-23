@@ -58,18 +58,66 @@ export interface GraphContext {
 
 export async function launchBrowser(): Promise<Browser> {
   logger.browser.action('launch', {
-    executable: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    userDataDir: process.env.DATA_DIR,
+    executablePath: process.env.PLAYWRIGHT_BROWSERS_PATH,
     headless: process.env.HEADLESS !== "false"
   });
 
   try {
-    const browser = await chromium.launch({
-      headless: process.env.HEADLESS !== "false",
-      timeout: DEFAULT_NAVIGATION_TIMEOUT,
-      executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+    if (!process.env.DATA_DIR || !process.env.PLAYWRIGHT_BROWSERS_PATH) {
+      throw new Error('DATA_DIR and PLAYWRIGHT_BROWSERS_PATH environment variables must be defined');
+    }
+
+    const { spawn } = await import('child_process');
+    const { existsSync } = await import('fs');
+    
+    // Verify paths exist
+    if (!existsSync(process.env.DATA_DIR)) {
+      throw new Error(`User data directory not found: ${process.env.DATA_DIR}`);
+    }
+    
+    // Kill any existing Chrome processes to avoid lock conflicts
+    try {
+      const { execSync } = await import('child_process');
+      execSync('taskkill /F /IM chrome.exe', { stdio: 'ignore' });
+      // Give time for file locks to be released
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (e) {
+      // Ignore if no processes were killed
+    }
+    
+    // Launch Chrome with remote debugging enabled
+    // IMPORTANT: Remove the quotes around the user data directory path
+    const chromeProcess = spawn(
+      process.env.PLAYWRIGHT_BROWSERS_PATH,
+      [
+        '--remote-debugging-port=9222',
+        `--user-data-dir=${process.env.DATA_DIR}`, // No quotes around the path
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--start-maximized',
+        process.env.HEADLESS !== "false" ? '--headless=new' : ''
+      ].filter(Boolean),
+      { detached: false, stdio: 'ignore' }
+    );
+    
+    // Wait for Chrome to start
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Connect to Chrome via CDP
+    const browser = await chromium.connectOverCDP('http://localhost:9222');
+    
+    // Clean up Chrome process when browser is disconnected
+    browser.on('disconnected', () => {
+      try {
+        if (chromeProcess && !chromeProcess.killed) {
+          chromeProcess.kill();
+        }
+      } catch (err) {
+        logger.error('Failed to kill Chrome process', err);
+      }
     });
 
-    logger.info('Browser launched successfully');
     return browser;
   } catch (error) {
     logger.browser.error('launch', error);
@@ -434,7 +482,7 @@ function buildSelectorFromMatch(match: any): string {
 
 // Capture a snapshot of the current page state and save a screenshot locally.
 export async function getPageState(page: Page): Promise<object> {
-  logger.browser.action('getState', { url: page.url() });
+  logger.debug('Getting page state', { url: page.url() });
 
   try {
     // Test extractors to verify they're working

@@ -14,6 +14,6 @@ export async function getPageStateHandler(ctx: GraphContext): Promise<string> {
   detectProgress(ctx, ctx.previousPageState, stateSnapshot);
   ctx.previousPageState = stateSnapshot;
   checkMilestones(ctx, stateSnapshot);
-  
+
   return "chooseAction";
 }
