@@ -93,58 +93,59 @@ export class InputExtractor extends BaseExtractor implements DOMExtractorStrateg
     try {
       logger.debug('Running InputExtractor...');
       
-      await page.evaluate(visibilityHelperScript);
-      
-      const inputs = await page.evaluate((selector) => {
-        function isElementVisible(element: Element): boolean {
-          if (!element) return false;
-          
-          try {
-            const style = window.getComputedStyle(element);
-            const htmlElement = element as HTMLElement;
-            return style.display !== 'none' && 
-                  style.visibility !== 'hidden' && 
-                  (htmlElement.offsetParent !== null || style.position === 'fixed');
-          } catch (e) {
-            console.error('Error checking visibility:', e);
-            return false;
-          }
-        }
-        
-        return Array.from(document.querySelectorAll(selector))
-          .map(el => {
-            const inputElement = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+      // Instead of directly evaluating the script, use the safer method from BaseExtractor
+      return this.safeEvaluate(
+        page,
+        (selector) => {
+          function isElementVisible(element: Element): boolean {
+            if (!element) return false;
             
-            const attributes: Record<string, string> = {};
-            const type = inputElement.getAttribute('type');
-            const name = inputElement.getAttribute('name');
-            const placeholder = inputElement.getAttribute('placeholder');
-            
-            if (type) attributes['type'] = type;
-            if (name) attributes['name'] = name;
-            if (placeholder) attributes['placeholder'] = placeholder;
-            
-            let label = '';
-            if (inputElement.id) {
-              const labelEl = document.querySelector(`label[for="${inputElement.id}"]`);
-              if (labelEl) label = labelEl.textContent?.trim() || '';
+            try {
+              const style = window.getComputedStyle(element);
+              const htmlElement = element as HTMLElement;
+              return style.display !== 'none' && 
+                    style.visibility !== 'hidden' && 
+                    (htmlElement.offsetParent !== null || style.position === 'fixed');
+            } catch (e) {
+              console.error('Error checking visibility:', e);
+              return false;
             }
-            
-            return {
-              tagName: inputElement.tagName.toLowerCase(),
-              id: inputElement.id || undefined,
-              type: type || inputElement.tagName.toLowerCase(),
-              name: name || undefined,
-              placeholder: placeholder || undefined,
-              label,
-              attributes,
-              isVisible: isElementVisible(inputElement),
-              value: inputElement.value || undefined
-            };
-          });
-      }, this.selector);
-      
-      return inputs;
+          }
+          
+          return Array.from(document.querySelectorAll(selector))
+            .map(el => {
+              const inputElement = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+              
+              const attributes: Record<string, string> = {};
+              const type = inputElement.getAttribute('type');
+              const name = inputElement.getAttribute('name');
+              const placeholder = inputElement.getAttribute('placeholder');
+              
+              if (type) attributes['type'] = type;
+              if (name) attributes['name'] = name;
+              if (placeholder) attributes['placeholder'] = placeholder;
+              
+              let label = '';
+              if (inputElement.id) {
+                const labelEl = document.querySelector(`label[for="${inputElement.id}"]`);
+                if (labelEl) label = labelEl.textContent?.trim() || '';
+              }
+              
+              return {
+                tagName: inputElement.tagName.toLowerCase(),
+                id: inputElement.id || undefined,
+                type: type || inputElement.tagName.toLowerCase(),
+                name: name || undefined,
+                placeholder: placeholder || undefined,
+                label,
+                attributes,
+                isVisible: isElementVisible(inputElement),
+                value: inputElement.value || undefined
+              };
+            });
+        },
+        [] // Default empty array if evaluation fails
+      );
     } catch (error) {
       logger.error('Error extracting inputs', { error });
       return [];
@@ -161,45 +162,46 @@ export class LinkExtractor extends BaseExtractor implements DOMExtractorStrategy
     try {
       logger.debug('Running LinkExtractor...');
       
-      await page.evaluate(visibilityHelperScript);
-      
-      const links = await page.evaluate((selector) => {
-        function isElementVisible(element: Element): boolean {
-          if (!element) return false;
-          
-          try {
-            const style = window.getComputedStyle(element);
-            const htmlElement = element as HTMLElement;
-            return style.display !== 'none' && 
-                  style.visibility !== 'hidden' && 
-                  (htmlElement.offsetParent !== null || style.position === 'fixed');
-          } catch (e) {
-            console.error('Error checking visibility:', e);
-            return false;
-          }
-        }
-        
-        return Array.from(document.querySelectorAll(selector))
-          .map(el => {
-            const linkElement = el as HTMLAnchorElement;
-            const text = linkElement.textContent?.trim() || '';
-            const href = linkElement.href || '';
+      // Use safeEvaluate to handle navigation events gracefully
+      return this.safeEvaluate(
+        page,
+        (selector) => {
+          function isElementVisible(element: Element): boolean {
+            if (!element) return false;
             
-            return {
-              tagName: 'a',
-              text: text.length > 100 ? text.substring(0, 100) + '...' : text,
-              href,
-              isVisible: isElementVisible(linkElement),
-              isExternal: linkElement.hostname !== window.location.hostname,
-              attributes: {
-                href
-              }
-            };
-          })
-          .filter(link => link.text && link.href);
-      }, this.selector);
-      
-      return links;
+            try {
+              const style = window.getComputedStyle(element);
+              const htmlElement = element as HTMLElement;
+              return style.display !== 'none' && 
+                    style.visibility !== 'hidden' && 
+                    (htmlElement.offsetParent !== null || style.position === 'fixed');
+            } catch (e) {
+              console.error('Error checking visibility:', e);
+              return false;
+            }
+          }
+          
+          return Array.from(document.querySelectorAll(selector))
+            .map(el => {
+              const linkElement = el as HTMLAnchorElement;
+              const text = linkElement.textContent?.trim() || '';
+              const href = linkElement.href || '';
+              
+              return {
+                tagName: 'a',
+                text: text.length > 100 ? text.substring(0, 100) + '...' : text,
+                href,
+                isVisible: isElementVisible(linkElement),
+                isExternal: linkElement.hostname !== window.location.hostname,
+                attributes: {
+                  href
+                }
+              };
+            })
+            .filter(link => link.text && link.href);
+        },
+        [] // Default empty array if evaluation fails
+      );
     } catch (error) {
       logger.error('Error extracting links', { error });
       return [];
@@ -216,40 +218,41 @@ export class LandmarkExtractor extends BaseExtractor implements DOMExtractorStra
     try {
       logger.debug('Running LandmarkExtractor...');
       
-      await page.evaluate(visibilityHelperScript);
-      
-      const landmarks = await page.evaluate((selector) => {
-        function isElementVisible(element: Element): boolean {
-          if (!element) return false;
-          
-          try {
-            const style = window.getComputedStyle(element);
-            const htmlElement = element as HTMLElement;
-            return style.display !== 'none' && 
-                  style.visibility !== 'hidden' && 
-                  (htmlElement.offsetParent !== null || style.position === 'fixed');
-          } catch (e) {
-            console.error('Error checking visibility:', e);
-            return false;
-          }
-        }
-        
-        return Array.from(document.querySelectorAll(selector))
-          .map(el => {
-            const element = el as HTMLElement;
-            const role = element.getAttribute('role') || element.tagName.toLowerCase();
+      // Use safeEvaluate pattern instead of direct page.evaluate
+      return this.safeEvaluate(
+        page,
+        (selector) => {
+          function isElementVisible(element: Element): boolean {
+            if (!element) return false;
             
-            return {
-              tagName: element.tagName.toLowerCase(),
-              role,
-              id: element.id || undefined,
-              isVisible: isElementVisible(element),
-              content: element.textContent?.trim().substring(0, 150) || ''
-            };
-          });
-      }, this.selector);
-      
-      return landmarks;
+            try {
+              const style = window.getComputedStyle(element);
+              const htmlElement = element as HTMLElement;
+              return style.display !== 'none' && 
+                    style.visibility !== 'hidden' && 
+                    (htmlElement.offsetParent !== null || style.position === 'fixed');
+            } catch (e) {
+              console.error('Error checking visibility:', e);
+              return false;
+            }
+          }
+          
+          return Array.from(document.querySelectorAll(selector))
+            .map(el => {
+              const element = el as HTMLElement;
+              const role = element.getAttribute('role') || element.tagName.toLowerCase();
+              
+              return {
+                tagName: element.tagName.toLowerCase(),
+                role,
+                id: element.id || undefined,
+                isVisible: isElementVisible(element),
+                content: element.textContent?.trim().substring(0, 150) || ''
+              };
+            });
+        },
+        [] // Default empty array as fallback
+      );
     } catch (error) {
       logger.error('Error extracting landmarks', { error });
       return [];

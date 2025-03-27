@@ -485,6 +485,20 @@ export async function getPageState(page: Page): Promise<object> {
   logger.debug('Getting page state', { url: page.url() });
 
   try {
+    // Check for navigation state
+    const isNavigating = await page.evaluate(() => document.readyState !== 'complete')
+      .catch(() => true);
+      
+    if (isNavigating) {
+      logger.info('Page is currently navigating, returning minimal state');
+      return {
+        url: page.url(),
+        title: await page.title().catch(() => 'Loading...'),
+        pageContent: "The page is currently loading. Please wait a moment before taking further action.",
+        isNavigating: true
+      };
+    }
+    
     // Test extractors to verify they're working
     const { testExtractors } = await import('./utils/extractorTester.js');
     await testExtractors(page);
@@ -511,15 +525,17 @@ export async function getPageState(page: Page): Promise<object> {
     return {
       url: domSnapshot.url,
       title: domSnapshot.title,
-      pageContent
+      pageContent,
+      isNavigating: false
     };
   } catch (error) {
     logger.browser.error('getState', error);
     return {
       url: page.url(),
-      title: await page.title(),
+      title: await page.title().catch(() => 'Unknown'),
       error: "Failed to extract page content",
-      pageContent: ""
+      pageContent: "Unable to extract page content. The page might be loading or in an unexpected state.",
+      isNavigating: true
     };
   }
 }

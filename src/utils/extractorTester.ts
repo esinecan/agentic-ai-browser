@@ -5,7 +5,15 @@ import { ButtonExtractor, InputExtractor, LinkExtractor } from '../core/page/ext
 
 export async function testExtractors(page: Page): Promise<void> {
   try {
-    // Change routine extractor testing to debug level
+    // Check if the page is currently navigating
+    const isNavigating = await page.evaluate(() => document.readyState !== 'complete')
+      .catch(() => true); // If this fails, assume navigation is in progress
+      
+    if (isNavigating) {
+      logger.debug('Page is navigating, deferring extractor tests');
+      return; // Exit early if navigation is in progress
+    }
+    
     logger.debug('Running extractors on page', { url: page.url() });
 
     // Test some extractors directly
@@ -21,12 +29,19 @@ export async function testExtractors(page: Page): Promise<void> {
       extractors: allExtractors.map(e => e.name)
     });
     
-    // Run the extractors in parallel
-    const [buttons, inputs, links] = await Promise.all([
+    // Run the extractors with proper error handling
+    const results = await Promise.allSettled([
       buttonExtractor.extract(page, { maxTextLength: 200 }),
       inputExtractor.extract(page, { maxTextLength: 200 }),
       linkExtractor.extract(page, { maxTextLength: 200 }),
     ]);
+    
+    // Process results safely
+    const [buttonResult, inputResult, linkResult] = results;
+    
+    const buttons = buttonResult.status === 'fulfilled' ? buttonResult.value : [];
+    const inputs = inputResult.status === 'fulfilled' ? inputResult.value : [];
+    const links = linkResult.status === 'fulfilled' ? linkResult.value : [];
     
     // Log extraction results
     logger.debug('Button extractor test', { 

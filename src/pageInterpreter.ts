@@ -51,17 +51,6 @@ export async function generatePageSummary(page: Page, domSnapshot: any): Promise
   // Interactive elements - Add square brackets
   summary += "INTERACTIVE ELEMENTS:\n";
   
-  // Add buttons with square brackets
-  if (fullSnapshot.elements?.buttons?.length) {
-    fullSnapshot.elements.buttons.forEach(button => {
-      if (button.text) {
-        const id = button.id ? `#${button.id}` : '';
-        const selector = id || (button.classes?.length ? `.${button.classes.join('.')}` : 'button');
-        summary += `- BUTTON: selector="${selector}", text="[${button.text}]"\n`;
-      }
-    });
-  }
-  
   // Add inputs with square brackets for labels/placeholders
   if (fullSnapshot.elements?.inputs?.length) {
     fullSnapshot.elements.inputs.forEach(input => {
@@ -91,6 +80,17 @@ export async function generatePageSummary(page: Page, domSnapshot: any): Promise
             summary += `  - field: ${input.label || input.name} (${input.type}${input.required ? ', required' : ''})\n`;
           }
         });
+      }
+    });
+  }
+
+  // Add buttons with square brackets
+  if (fullSnapshot.elements?.buttons?.length) {
+    fullSnapshot.elements.buttons.forEach(button => {
+      if (button.text) {
+        const id = button.id ? `#${button.id}` : '';
+        const selector = id || (button.classes?.length ? `.${button.classes.join('.')}` : 'button');
+        summary += `- BUTTON: selector="${selector}", text="[${button.text}]"\n`;
       }
     });
   }
