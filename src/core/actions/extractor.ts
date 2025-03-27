@@ -180,7 +180,7 @@ export class ActionExtractor {
       }
 
       const action: Partial<Action> = { type: actionType as any };
-      if (element !== undefined) (action as any).selector = element;
+      if (element !== undefined) (action as any).element = element; // Change from selector to element
       if (question !== undefined) (action as any).value = question;
 
       return this.normalizeActionObject(action);
@@ -206,8 +206,7 @@ export class ActionExtractor {
   private normalizeActionObject(obj: any): Action {
     return {
         type: obj.type as "input" | "navigate" | "click" | "wait" | "sendHumanMessage" | "notes",
-        selector: obj.element || obj.selector,
-        element: obj.element || obj.selector, 
+        element: obj.element || obj.selector, // Prioritize element, fall back to selector
         value: obj.value,
         description: obj.description,
         question: obj.question,

@@ -45,7 +45,7 @@ export async function generatePageSummary(page: Page, domSnapshot: any): Promise
     const $ = cheerio.load(htmlContent);
     $('script, style, svg, noscript, iframe, meta, link').remove();
     const bodyText = "[" + $('body').text().replace(/\t/g, '').replace(/\n/g, '').trim() + "]"; // Remove tabs but keep newlines
-    summary += `PAGE CONTENT:\n${bodyText.substring(0, 10000)}${bodyText.length > 10000 ? '...' : ''}\n\n`; // Double limit from 5000
+    summary += `PAGE CONTENT:\n${bodyText.substring(0, 10000)}${bodyText.length > 20000 ? '...' : ''}\n\n`; // Double limit from 5000
   }
   
   // Interactive elements - Add square brackets

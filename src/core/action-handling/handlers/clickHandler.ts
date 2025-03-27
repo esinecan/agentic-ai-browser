@@ -2,6 +2,7 @@ import { Page, ElementHandle } from "playwright";
 import { GraphContext } from "../../../browserExecutor.js";
 import { getElement, verifyAction } from "../../../browserExecutor.js";
 import { SuccessPatterns } from "../../../successPatterns.js";
+import { SelectorFallbacks } from "../../elements/strategies/SelectorFallbacks.js";
 import logger from "../../../utils/logger.js";
 
 // Default value for the universal submit selector if not set in environment variables
@@ -19,7 +20,8 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
   // Make comparison more robust by checking for exact match or if action element contains the selector text
   if (ctx.action.element === universalSubmitSelector || 
       (typeof ctx.action.element === 'string' && 
-       ctx.action.element.includes(universalSubmitSelector))) {
+       ctx.action.element.includes(universalSubmitSelector)) ||
+      ctx.action.element === "Enter") {
     
     logger.browser.action('keypress', {
       key: 'Enter',
@@ -59,8 +61,29 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
   });
 
   try {
-    const elementHandle = await getElement(ctx.page, ctx.action);
-
+    // Store previous URL for navigation detection
+    const previousUrl = ctx.page.url();
+    ctx.action.previousUrl = ctx.action.previousUrl || previousUrl;
+    
+    // Try with the original element selector first
+    let elementHandle = await getElement(ctx.page, ctx.action);
+    
+    // If not found, try with fallbacks
+    if (!elementHandle && ctx.action.element) {
+      logger.info('Original selector failed, trying fallbacks', {
+        original: ctx.action.element,
+        url: ctx.page.url()
+      });
+      
+      elementHandle = await SelectorFallbacks.tryFallbacks(ctx.page, ctx.action);
+      
+      // If we found an element, log the fallback success
+      if (elementHandle) {
+        logger.info('Found element using fallback mechanisms');
+      }
+    }
+    
+    // If still no element found, throw error
     if (!elementHandle) {
       throw new Error("Element not found " + ctx.action.element);
     }
@@ -85,6 +108,11 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
       element: description,
       successCount: ctx.successCount
     });
+
+    // Record in context that we used the last selector
+    if (ctx.action.element) {
+      ctx.lastSelector = ctx.action.element;
+    }
 
     // Optionally record success patterns
     try {

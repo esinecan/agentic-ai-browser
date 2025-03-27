@@ -3,7 +3,6 @@
  */
 export interface Action {
   type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage" | "notes";
-  selector?: string;
   element?: string;
   value?: string;
   question?: string;
@@ -13,7 +12,6 @@ export interface Action {
   previousUrl?: string;
   operation?: "add" | "read";
   note?: string;
-
 }
 
 /**

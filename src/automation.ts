@@ -62,6 +62,21 @@ function promptUser(question: string): Promise<string> {
   });
 }
 
+function sexyPrint(text: string, delay = 20): Promise<void> {
+  return new Promise((resolve) => {
+    let i = 0;
+    const interval = setInterval(() => {
+      process.stdout.write(text[i]);
+      i++;
+      if (i >= text.length) {
+        clearInterval(interval);
+        process.stdout.write("\n");
+        resolve();
+      }
+    }, delay);
+  });
+}
+
 // Helper function to process user function calls
 async function processUserFunctionCall(ctx: GraphContext, functionCall: string): Promise<string> {
   const expandedPrompt = await processFunctionCall(functionCall);
@@ -495,7 +510,10 @@ export async function runGraph(): Promise<void> {
   // Prompt the user for their automation goal
   const userGoalPrompt = "Please enter your goal for this automation:\n" +
     "(Tip: You can use ::functions to list available function templates)";
-  const userGoal = await promptUser(userGoalPrompt);
+  //const userGoal = await promptUser(userGoalPrompt);
+  const userGoal = process.env.goal || "";
+  console.log(userGoalPrompt);
+  await sexyPrint(userGoal);
   
   // Check for special commands
   if (isListFunctionsRequest(userGoal)) {
