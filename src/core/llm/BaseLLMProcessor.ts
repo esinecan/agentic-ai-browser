@@ -194,6 +194,21 @@ ${context.compressedHistory ? context.compressedHistory.slice(-5).join('\n') :
         responseLength: responseText.length
       });
       
+      // If we couldn't extract an action but the response is substantive, 
+      // treat it as a message to the human
+      if (!action && responseText.trim().length > 50) {
+        logger.info('Converting LLM response to sendHumanMessage', { 
+          responseLength: responseText.length 
+        });
+        
+        return {
+          type: 'sendHumanMessage',
+          question: responseText,
+          selectorType: 'css',
+          maxWait: 5000
+        };
+      }
+      
       if (!action) throw new Error("Failed to extract action from response");
       return action;
     } catch (error) {
