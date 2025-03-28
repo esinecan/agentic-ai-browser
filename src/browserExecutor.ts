@@ -6,6 +6,8 @@ import logger from './utils/logger.js';
 import './core/page/initialize.js';
 // Import the new DOM extraction system
 import { PageAnalyzer } from './core/page/analyzer.js';
+// Import the ContentExtractor
+import { ContentExtractor } from './core/page/contentExtractor.js';
 import type { ChildProcess } from 'child_process';
 
 dotenv.config();
@@ -24,7 +26,7 @@ export const SIMILARITY_THRESHOLD = 0.7;
 
 // Define and export the action schema and type.
 export const ActionSchema = z.object({
-  type: z.enum(["click", "input", "navigate", "wait", "sendHumanMessage", "notes"]),
+  type: z.enum(["click", "input", "navigate", "wait", "sendHumanMessage", "notes", "scroll"]),
   element: z.string().optional(),
   value: z.string().optional(),
   description: z.string().optional(),
@@ -34,6 +36,7 @@ export const ActionSchema = z.object({
   previousUrl: z.string().optional(),
   operation: z.enum(["add", "read"]).optional(),
   note: z.string().optional(),
+  direction: z.enum(["up", "down"]).optional(),
 });
 export type Action = z.infer<typeof ActionSchema>;
 
@@ -524,7 +527,7 @@ export async function getPageState(page: Page): Promise<object> {
       .catch(() => true);
       
     if (isNavigating) {
-      logger.info('Page is currently navigating, returning minimal state');
+      logger.info('Page is navigating, returning minimal state');
       return {
         url: page.url(),
         title: await page.title().catch(() => 'Loading...'),
@@ -540,14 +543,19 @@ export async function getPageState(page: Page): Promise<object> {
     // Get a standard snapshot with our new system
     const domSnapshot = await PageAnalyzer.extractSnapshot(page);
     
+    // Extract content with progressive loading via ContentExtractor
+    const { content, truncated, scrolled } = await ContentExtractor.extract(page);
+    
     // Use pageInterpreter to return unified page content
     const { generatePageSummary } = await import('./pageInterpreter.js');
-    const pageContent = await generatePageSummary(page, domSnapshot);
+    const pageSummary = await generatePageSummary(page, domSnapshot);
 
     logger.debug('Page state captured', {
       url: domSnapshot.url,
       title: domSnapshot.title,
-      pageContentLength: pageContent.length,
+      contentLength: content.length,
+      contentTruncated: truncated,
+      contentScrolled: scrolled,
       elementsFound: {
         buttons: domSnapshot.elements?.buttons?.length || 0,
         inputs: domSnapshot.elements?.inputs?.length || 0,
@@ -559,8 +567,11 @@ export async function getPageState(page: Page): Promise<object> {
     return {
       url: domSnapshot.url,
       title: domSnapshot.title,
-      pageContent,
-      isNavigating: false
+      pageContent: content,
+      pageSummary,
+      contentTruncated: truncated,
+      contentScrolled: scrolled,
+      domSnapshot
     };
   } catch (error) {
     logger.browser.error('getState', error);

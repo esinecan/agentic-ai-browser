@@ -2,7 +2,7 @@
  * Represents an action to be performed in the browser
  */
 export interface Action {
-  type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage" | "notes";
+  type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage" | "notes" | "scroll";
   element?: string;
   value?: string;
   question?: string;
@@ -12,6 +12,7 @@ export interface Action {
   previousUrl?: string;
   operation?: "add" | "read";
   note?: string;
+  direction?: "up" | "down"; // For scroll action
 }
 
 /**

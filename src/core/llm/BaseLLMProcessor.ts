@@ -19,7 +19,7 @@ export abstract class BaseLLMProcessor implements LLMProcessor {
 protected static readonly SYSTEM_PROMPT = `
   ### You are an automation agent controlling a web browser.
   ### Your goal is to execute web automation tasks precisely.
-  ### You can return ONE of the 6 valid action types per response:
+  ### You can return ONE of the 7 valid action types per response:
   
   # BROWSER ACTIONS:
   These are going to be enacted on the browser.
@@ -27,6 +27,7 @@ protected static readonly SYSTEM_PROMPT = `
   - Input: { "type": "input", "element": "selector", "value": "text to enter" }
   - Navigate: { "type": "navigate", "value": "url" }
   - Wait: { "type": "wait", "maxWait": milliseconds }
+  - Scroll: { "type": "scroll", "direction": "up" or "down" } 
 
   # TEXT HEAVY ACTIONS:
   These are things that will be read by the human. Be exhaustive and through in the text you put in "question" and "note" fields. When asking a question, more context will help user answer you better. when you're reporting back, user would prefer an information dense, rich briefing. When taking notes, you might be conducting deep research or even working on a novel together. You have practically unlimited space there unlike the context window. utilize it well.
@@ -39,6 +40,7 @@ protected static readonly SYSTEM_PROMPT = `
   - When you fill an input field, a click event runs there too. So you can (usually) submit via enter key event: { "type": "click", "element": "${UNIVERSAL_SUBMIT_SELECTOR}" }
   - For dynamic content, add a short wait: { "type": "wait", "maxWait": 2000 }
   - If you come across something stopping you, CAPTCHAs, login walls, and popups, human can most likely help. If lost or confused, same applies.
+  - Use scroll action for text-heavy pages when you need to see more content: { "type": "scroll", "direction": "down" }
   - When extracting data, use notes to store important information
   
   # EXAMPLES:
@@ -48,19 +50,21 @@ protected static readonly SYSTEM_PROMPT = `
   4. Report back to human: { "type": "sendHumanMessage", "question": "I've gone over the links you sent and wrote a 10k word essay from them. you can check it in the notes." }
   5. Save info: { "type": "notes", "operation": "add", "note": "Product price: $19.99" }
   6. Read saved info: { "type": "notes", "operation": "read" }
-  7. '- BUTTON: selector=".ytSearchboxComponentSearchButton", text="[Search]"' will be successfully clicked by
+  7. Load more content: { "type": "scroll", "direction": "down" }
+  8. Return to top of page: { "type": "scroll", "direction": "up" }
+  9. '- BUTTON: selector=".ytSearchboxComponentSearchButton", text="[Search]"' will be successfully clicked by
      { 
        "type": "click", 
        "element": ".ytSearchboxComponentSearchButton", 
        "description": "Execute search using visible search button" 
      }
-  8. Similarly: "DOM: '- YouTube Transcript Generator - Free Online, No Sign-upNoteGPThttps://notegpt.io › youtube-transcript-generator -> https://notegpt.io/youtube-transcript-generator'"" would be selected by
+  10. Similarly: "DOM: '- YouTube Transcript Generator - Free Online, No Sign-upNoteGPThttps://notegpt.io › youtube-transcript-generator -> https://notegpt.io/youtube-transcript-generator'"" would be selected by
      { 
        "type": "click", 
        "element": "a[href='https://notegpt.io/youtube-transcript-generator']", 
        "description": "Select NoteGPT transcript generator from available options" 
      }
-  9. Let's say you want to search "lorem ipsum dolor sit amet" and the DOM Snapshot you receive in the prompt contains this:
+  11. Let's say you want to search "lorem ipsum dolor sit amet" and the DOM Snapshot you receive in the prompt contains this:
   INTERACTIVE ELEMENTS:
     - INPUT: selector="input[name="search_query"]", type="text", placeholder="[Search]"
     - INPUT: selector="input", type="checkbox"
@@ -134,13 +138,15 @@ protected static readonly SYSTEM_PROMPT = `
   async generateNextAction(state: object, context: GraphContext): Promise<GraphContext["action"] | null> {
     // Ensure page content is available
     context.pageContent = (state as any).pageContent;
+    context.pageSummary = (state as any).pageSummary;
     
     try {
       logger.info('Generating next action', {
         state: {
           url: (state as any).url,
           title: (state as any).title,
-          contentLength: context.pageContent?.length
+          contentLength: context.pageContent?.length,
+          summaryLength: context.pageSummary?.length
         },
         context: {
           goal: context.userGoal,
@@ -152,18 +158,33 @@ protected static readonly SYSTEM_PROMPT = `
       });
 
       // Build the prompt with a consistent format across providers
+      let truncationWarning = "";
+      if ((state as any).contentTruncated) {
+        truncationWarning = `NOTICE: The page content is very large and has been truncated. If you need to find specific content that might be missing, you can use the "scroll" action with direction "down" to view more content.\n`;
+      }
+      
+      if ((state as any).contentScrolled) {
+        truncationWarning += `INFO: The system automatically scrolled down to load more content on this page.\n`;
+      }
+
       let prompt = `
 ---
 ${context.userGoal ? `YOUR CURRENT TASK: ${context.userGoal}` : 'This is what the browser is currently displaying.'}
 ---
 ${this.buildFeedbackSection(context)}
+${truncationWarning ? `\n${truncationWarning}\n` : ''}
 ---
-THIS IS THE SIMPLIFIED HTML CONTENT OF THE PAGE, IN LIEU OF YOU "SEEING" THE PAGE:
+THIS IS THE STRUCTURED PAGE SUMMARY:
 URL: ${(state as any).url}
 TITLE: ${(state as any).title}
 
-${context.pageContent}
+${context.pageSummary || 'No structured summary available.'}
 ---
+${(state as any).contentTruncated ? 'NOTE: Page content was truncated due to length.' : ''}
+${(state as any).contentScrolled ? 'NOTE: Page was scrolled to load more content.' : ''}
+
+THIS IS THE RAW PAGE CONTENT:
+${context.pageContent || 'No content available.'}
 ---
 TASK HISTORY:
 ${context.compressedHistory ? context.compressedHistory.slice(-5).join('\n') : 
@@ -177,6 +198,7 @@ ${context.compressedHistory ? context.compressedHistory.slice(-5).join('\n') :
         provider: this.constructor.name,
         promptLength: prompt.length,
         hasPageContent: !!context.pageContent,
+        hasPageSummary: !!context.pageSummary,
         hasSuccessfulActions: (context.successfulActions?.length ?? 0) > 0,
         feedback: this.buildFeedbackSection(context)
       });

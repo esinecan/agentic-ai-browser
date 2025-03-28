@@ -150,7 +150,7 @@ export class ActionExtractor {
 
   private extractFromLoosePatterns(text: string): Action | null {
     try {
-      const actionTypes = ["click", "input", "navigate", "scroll", "extract", "wait", "sendHumanMessage", "sendhumanmessage", "ask_human", "ask"];
+      const actionTypes = ["click", "input", "navigate", "scroll", "extract", "wait", "sendHumanMessage", "sendhumanmessage", "ask_human", "ask", "notes"];
       let actionType: string | null = null;
 
       for (const type of actionTypes) {
@@ -162,6 +162,18 @@ export class ActionExtractor {
       }
 
       if (!actionType) return null;
+
+      // For scroll actions, detect direction
+      let direction: string | null = null;
+      if (actionType === "scroll") {
+        if (text.toLowerCase().includes("scroll down") || text.toLowerCase().includes("direction down")) {
+          direction = "down";
+        } else if (text.toLowerCase().includes("scroll up") || text.toLowerCase().includes("direction up")) {
+          direction = "up";
+        } else {
+          direction = "down"; // default direction
+        }
+      }
 
       let element: string | null = null;
       const elementMatch = text.match(/element[:\s]+["']?([^"'\n,}]+)["']?/i) ||
@@ -180,8 +192,9 @@ export class ActionExtractor {
       }
 
       const action: Partial<Action> = { type: actionType as any };
-      if (element !== undefined) (action as any).element = element; // Change from selector to element
+      if (element !== undefined) (action as any).element = element;
       if (question !== undefined) (action as any).value = question;
+      if (direction !== null) (action as any).direction = direction;
 
       return this.normalizeActionObject(action);
     } catch (error) {
@@ -205,7 +218,7 @@ export class ActionExtractor {
   
   private normalizeActionObject(obj: any): Action {
     return {
-        type: obj.type as "input" | "navigate" | "click" | "wait" | "sendHumanMessage" | "notes",
+        type: obj.type as "input" | "navigate" | "click" | "wait" | "sendHumanMessage" | "notes" | "scroll",
         element: obj.element || obj.selector, // Prioritize element, fall back to selector
         value: obj.value,
         description: obj.description,
@@ -214,7 +227,8 @@ export class ActionExtractor {
         selectorType: obj.selectorType || "css",
         maxWait: obj.maxWait ?? 5000,
         operation: obj.operation,
-        note: obj.note
+        note: obj.note,
+        direction: obj.direction as "up" | "down" | undefined
     };
   }
 }
