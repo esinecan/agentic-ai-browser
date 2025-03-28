@@ -6,8 +6,17 @@ import logger from './utils/logger.js';
 import './core/page/initialize.js';
 // Import the new DOM extraction system
 import { PageAnalyzer } from './core/page/analyzer.js';
+import type { ChildProcess } from 'child_process';
 
 dotenv.config();
+
+// Global Chrome process reference
+let chromeProcess: ChildProcess | null = null;
+
+// Add this to the exported items
+export function getChromeProcess(): ChildProcess | null {
+  return chromeProcess;
+}
 
 export const DEFAULT_NAVIGATION_TIMEOUT = 10000;
 export const RETRY_DELAY_MS = 2000;
@@ -87,22 +96,22 @@ export async function launchBrowser(): Promise<Browser> {
     }
     
     // Launch Chrome with remote debugging enabled
-    // IMPORTANT: Remove the quotes around the user data directory path
-    const chromeProcess = spawn(
+    chromeProcess = spawn(
       process.env.PLAYWRIGHT_BROWSERS_PATH,
       [
         '--remote-debugging-port=9222',
-        `--user-data-dir=${process.env.DATA_DIR}`, // No quotes around the path
+        `--user-data-dir=${process.env.DATA_DIR}`,
         '--no-first-run',
         '--no-default-browser-check',
+        '--disable-session-crashed-bubble',
         '--start-maximized',
         process.env.HEADLESS !== "false" ? '--headless=new' : ''
       ].filter(Boolean),
-      { detached: false, stdio: 'ignore' }
+      { detached: true, stdio: 'ignore' }  // Use detached: true for better persistence
     );
     
-    // Wait for Chrome to start
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Wait for Chrome to start properly by polling the DevTools endpoint
+    await waitForChromeDevTools(30000); // 30-second timeout
     
     // Connect to Chrome via CDP
     const browser = await chromium.connectOverCDP('http://localhost:9222');
@@ -123,6 +132,31 @@ export async function launchBrowser(): Promise<Browser> {
     logger.browser.error('launch', error);
     throw error;
   }
+}
+
+// Add this helper function
+async function waitForChromeDevTools(timeoutMs = 30000): Promise<void> {
+  const startTime = Date.now();
+  const { default: fetch } = await import('node-fetch');
+  
+  logger.info('Waiting for Chrome DevTools to become available...');
+  
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const response = await fetch('http://localhost:9222/json/version');
+      if (response.ok) {
+        logger.info('Chrome DevTools ready!');
+        return;
+      }
+    } catch (e) {
+      // Ignore errors during polling
+    }
+    
+    // Wait a bit before trying again
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  
+  throw new Error(`Chrome DevTools not available after ${timeoutMs}ms`);
 }
 
 // Create a new page and navigate to the starting URL.

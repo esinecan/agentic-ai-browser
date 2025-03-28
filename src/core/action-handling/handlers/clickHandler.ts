@@ -88,8 +88,35 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
       throw new Error("Element not found " + ctx.action.element);
     }
 
-    // Try the click
-    await elementHandle.click({ timeout: ctx.action.maxWait });
+    try {
+      // Try the regular Playwright click first
+      await elementHandle.click({ timeout: ctx.action.maxWait });
+    } catch (error) {
+      // If regular click fails, try JavaScript click as fallback
+      logger.info('Regular click failed, trying JavaScript click', {
+        element: ctx.action.element,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      
+      // Try JavaScript click which can bypass overlay issues
+      try {
+        await ctx.page.evaluate((element: HTMLElement) => {
+          if (element && typeof element.click === 'function') {
+            element.click();
+            return true;
+          }
+          return false;
+        }, elementHandle as any);
+      } catch (jsError) {
+        // Both methods failed, throw original error
+        logger.error('JavaScript click also failed', {
+          element: ctx.action.element,
+          error: jsError instanceof Error ? jsError.message : String(jsError)
+        });
+        throw error; // Re-throw the original error
+      }
+    }
+
     const verified = await verifyAction(ctx.page, ctx.action);
 
     if (!verified) {
