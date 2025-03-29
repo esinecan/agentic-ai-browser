@@ -39,11 +39,64 @@ export async function inputHandler(ctx: GraphContext): Promise<string> {
     // Ensure element is visible before interacting with it
     await ensureElementVisible(ctx.page, elementHandle);
     
-    // FOCUS-FIRST APPROACH: Click to focus before filling
-    await elementHandle.click({ timeout: ctx.action.maxWait / 2 });
+    // Get element info for logging and verification
+    const elementInfo = await elementHandle.evaluate((el: HTMLElement) => {
+      const tagName = el.tagName.toLowerCase();
+      return {
+        tagName,
+        type: tagName === 'input' ? (el as HTMLInputElement).type : undefined,
+        isSelect: tagName === 'select',
+        isInput: tagName === 'input',
+        isTextarea: tagName === 'textarea',
+        value: tagName === 'input' ? (el as HTMLInputElement).value : 
+               tagName === 'textarea' ? (el as HTMLTextAreaElement).value :
+               tagName === 'select' ? (el as HTMLSelectElement).value :
+               el.getAttribute('value') || el.textContent?.trim() || '',
+        id: el.id,
+        name: el.getAttribute('name')
+      };
+    });
+
+    try {
+      // Try direct fill first (without clicking) to avoid triggering blur events
+      await elementHandle.fill(ctx.action.value || '');
+      logger.info('Direct fill successful', { element: ctx.action.element });
+    } catch (fillError) {
+      logger.warn('Direct fill failed, falling back to click+fill approach', { 
+        error: fillError instanceof Error ? fillError.message : String(fillError)
+      });
+      
+      // If direct fill fails, fall back to click+fill
+      await elementHandle.click({ timeout: ctx.action.maxWait / 2 });
+      await elementHandle.fill(ctx.action.value || '');
+    }
     
-    // Then fill the value
-    await elementHandle.fill(ctx.action.value!, { timeout: ctx.action.maxWait });
+    // Add verification after input/selection to confirm values were accepted
+    const verifyValue = await elementHandle.evaluate((el: HTMLElement, value: string) => {
+      if (el.tagName.toLowerCase() === 'select') {
+        // For select elements, check selected value or text
+        const selectEl = el as HTMLSelectElement;
+        return Array.from(selectEl.selectedOptions).some(o => 
+          o.value === value || o.text === value || o.textContent === value
+        );
+      } else if (el.hasAttribute('contenteditable')) {
+        // For contentEditable elements
+        return el.textContent === value;
+      } else {
+        // For inputs, check value property
+        const inputEl = el as HTMLInputElement;
+        return inputEl.value === value;
+      }
+    }, ctx.action.value!);
+    
+    if (!verifyValue) {
+      logger.warn('Value verification failed after input operation', {
+        element: ctx.action.element,
+        value: ctx.action.value,
+        elementInfo
+      });
+      // We continue despite verification failure, as some inputs might transform values
+    }
     
     const verified = await verifyAction(ctx.page, ctx.action);
     if (!verified) throw new Error("Action verification failed after input");
@@ -72,6 +125,7 @@ export async function inputHandler(ctx: GraphContext): Promise<string> {
     logger.info("Input successful", {
       element: ctx.action.element,
       value: ctx.action.value,
+      elementType: elementInfo.tagName + (elementInfo.type ? `[type=${elementInfo.type}]` : ''),
       successCount: ctx.successCount
     });
 

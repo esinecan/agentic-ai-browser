@@ -365,7 +365,7 @@ class SelectorFallbacks {
     +{static} findElementByText(page: Page, text: string, tag?: string): Promise<ElementHandle<Node> | null>
     +{static} tryFallbacks(page: Page, action: Action): Promise<ElementHandle<Node> | null>
 }
-+ensureElementVisible(page: Page, elementHandle: ElementHandle<Node>): Promise<boolean>
++ensureElementVisible(page: Page, elementHandle: ElementHandle<Node>): Promise<void>
 +clickHandler(ctx: GraphContext): Promise<string>
 +inputHandler(ctx: GraphContext): Promise<string>
 +navigateHandler(ctx: GraphContext): Promise<string>
