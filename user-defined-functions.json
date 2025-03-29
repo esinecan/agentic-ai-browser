@@ -8,5 +8,25 @@
     "name": "howToWithThisTech", 
     "args": ["techToBeUsed", "myUseCase"], 
     "prompt": "I want to ${myUseCase} using ${techToBeUsed}. Can you go to a search engine website and first search for a basic tutorial for ${techToBeUsed}. Then click on its link and read it to front load your context and reduce hallucination likelihood. Then go to google.com again to see if there's something that is exactly what I'm intending to do, or very close, read that and write down notes. But if there isn't something very close, simply generalize from ${myUseCase} incrementally, performing multiple searches if necessary. Once you have accumulated enough info create a very detailed step by step guide by writing it down via notes action. Feel free to take up to four sequential actions (I suggest you use first turn for making a 3 section plan, then each oof the rest for a section) to prepare the write up. And then discuss with the user via sendHumanMessage."
+  },
+  {
+    "name": "evaluateTechLandscape",
+    "args": ["tech"],
+    "prompt": "You're doing a deep structured analysis of ${tech}. There are three search queries to explore. For each one, visit the top 3 results (1 per turn), take notes after reading each. Keep notes focused but thorough — enough that we could later write an article or decide on adoption.\n\nQueries:\n1. ${tech} site:stackoverflow.com OR site:github.com OR site:reddit.com/r/programming OR site:dev.to OR site:medium.com\n2. ${tech} GitHub OR 'release notes' OR 'roadmap' OR 'changelog'\n3. ${tech} integration OR setup OR compatibility OR usage OR deployment OR architecture\n\nOnce you've visited and taken notes on all 9 results (3 per query), read through your own notes one final time and write a long-form, full-conversation-scale evaluation. Cover: strengths and weaknesses, target use cases, likely pain points, community vibes, current trajectory. Use the note action for each article and the final evaluation. Then sendHumanMessage for discussion."
+  },
+  {
+    "name": "lookIntoTopic",
+    "args": ["topic"],
+    "prompt": "You're helping me understand ${topic} from multiple angles. You'll do 2 rounds of research with 2 search queries each. In each round, visit the top 2 results (1 per turn) and take a short but informative note after reading.\n\nQueries:\n1. ${topic} explained OR overview OR beginner\n2. ${topic} controversy OR debate OR criticism\n\nThen, read your own notes and write a single, thoughtful summary. Cover: what the topic is, what people like about it, any common confusions or disagreements. Keep the final summary casual but clear. Use note for each article and the final piece. Then sendHumanMessage for discussion."
+  },
+  {
+    "name": "investigateFromTrustedSources",
+    "args": ["topic", "urls"],
+    "prompt": "You're going to read investigative articles about ${topic} from a list of trusted sources:\n\n${urls}\n\nVisit each URL one by one (1 per turn). For each one: read the article fully, take a brief note summarizing what unique info or framing it adds (skip redundant info).\n\nAfter you've visited all the links: reread your own notes and write a final synthesis as a note that covers: the most important facts, how each source framed the topic, any noticeable differences in tone or emphasis. Use the note action each time you learn something new. Once you're done with the synthesis, sendHumanMessage for a discussion."
+  },
+  {
+    "name": "compareOpinions",
+    "args": ["subject"],
+    "prompt": "Search '${subject} pros and cons' or '${subject} criticism'. Visit Reddit, HackerNews, StackOverflow, Medium, etc. Take notes on both praise and critique. Cluster views into patterns. Be balanced. When the picture is clear, sendHumanMessage."
   }
 ]

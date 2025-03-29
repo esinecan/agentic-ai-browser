@@ -6,8 +6,19 @@ import logger from './utils/logger.js';
 import './core/page/initialize.js';
 // Import the new DOM extraction system
 import { PageAnalyzer } from './core/page/analyzer.js';
+// Import the ContentExtractor
+import { ContentExtractor } from './core/page/contentExtractor.js';
+import type { ChildProcess } from 'child_process';
 
 dotenv.config();
+
+// Global Chrome process reference
+let chromeProcess: ChildProcess | null = null;
+
+// Add this to the exported items
+export function getChromeProcess(): ChildProcess | null {
+  return chromeProcess;
+}
 
 export const DEFAULT_NAVIGATION_TIMEOUT = 10000;
 export const RETRY_DELAY_MS = 2000;
@@ -15,7 +26,7 @@ export const SIMILARITY_THRESHOLD = 0.7;
 
 // Define and export the action schema and type.
 export const ActionSchema = z.object({
-  type: z.enum(["click", "input", "navigate", "wait", "sendHumanMessage", "notes"]),
+  type: z.enum(["click", "input", "navigate", "wait", "sendHumanMessage", "notes", "scroll"]),
   element: z.string().optional(),
   value: z.string().optional(),
   description: z.string().optional(),
@@ -25,6 +36,7 @@ export const ActionSchema = z.object({
   previousUrl: z.string().optional(),
   operation: z.enum(["add", "read"]).optional(),
   note: z.string().optional(),
+  direction: z.enum(["up", "down"]).optional(),
 });
 export type Action = z.infer<typeof ActionSchema>;
 
@@ -87,22 +99,22 @@ export async function launchBrowser(): Promise<Browser> {
     }
     
     // Launch Chrome with remote debugging enabled
-    // IMPORTANT: Remove the quotes around the user data directory path
-    const chromeProcess = spawn(
+    chromeProcess = spawn(
       process.env.PLAYWRIGHT_BROWSERS_PATH,
       [
         '--remote-debugging-port=9222',
-        `--user-data-dir=${process.env.DATA_DIR}`, // No quotes around the path
+        `--user-data-dir=${process.env.DATA_DIR}`,
         '--no-first-run',
         '--no-default-browser-check',
+        '--disable-session-crashed-bubble',
         '--start-maximized',
         process.env.HEADLESS !== "false" ? '--headless=new' : ''
       ].filter(Boolean),
-      { detached: false, stdio: 'ignore' }
+      { detached: true, stdio: 'ignore' }  // Use detached: true for better persistence
     );
     
-    // Wait for Chrome to start
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Wait for Chrome to start properly by polling the DevTools endpoint
+    await waitForChromeDevTools(30000); // 30-second timeout
     
     // Connect to Chrome via CDP
     const browser = await chromium.connectOverCDP('http://localhost:9222');
@@ -123,6 +135,31 @@ export async function launchBrowser(): Promise<Browser> {
     logger.browser.error('launch', error);
     throw error;
   }
+}
+
+// Add this helper function
+async function waitForChromeDevTools(timeoutMs = 30000): Promise<void> {
+  const startTime = Date.now();
+  const { default: fetch } = await import('node-fetch');
+  
+  logger.info('Waiting for Chrome DevTools to become available...');
+  
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const response = await fetch('http://localhost:9222/json/version');
+      if (response.ok) {
+        logger.info('Chrome DevTools ready!');
+        return;
+      }
+    } catch (e) {
+      // Ignore errors during polling
+    }
+    
+    // Wait a bit before trying again
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  
+  throw new Error(`Chrome DevTools not available after ${timeoutMs}ms`);
 }
 
 // Create a new page and navigate to the starting URL.
@@ -485,6 +522,20 @@ export async function getPageState(page: Page): Promise<object> {
   logger.debug('Getting page state', { url: page.url() });
 
   try {
+    // Check for navigation state
+    const isNavigating = await page.evaluate(() => document.readyState !== 'complete')
+      .catch(() => true);
+      
+    if (isNavigating) {
+      logger.info('Page is navigating, returning minimal state');
+      return {
+        url: page.url(),
+        title: await page.title().catch(() => 'Loading...'),
+        pageContent: "The page is currently loading. Please wait a moment before taking further action.",
+        isNavigating: true
+      };
+    }
+    
     // Test extractors to verify they're working
     const { testExtractors } = await import('./utils/extractorTester.js');
     await testExtractors(page);
@@ -492,14 +543,19 @@ export async function getPageState(page: Page): Promise<object> {
     // Get a standard snapshot with our new system
     const domSnapshot = await PageAnalyzer.extractSnapshot(page);
     
+    // Extract content with progressive loading via ContentExtractor
+    const { content, truncated, scrolled } = await ContentExtractor.extract(page);
+    
     // Use pageInterpreter to return unified page content
     const { generatePageSummary } = await import('./pageInterpreter.js');
-    const pageContent = await generatePageSummary(page, domSnapshot);
+    const pageSummary = await generatePageSummary(page, domSnapshot);
 
     logger.debug('Page state captured', {
       url: domSnapshot.url,
       title: domSnapshot.title,
-      pageContentLength: pageContent.length,
+      contentLength: content.length,
+      contentTruncated: truncated,
+      contentScrolled: scrolled,
       elementsFound: {
         buttons: domSnapshot.elements?.buttons?.length || 0,
         inputs: domSnapshot.elements?.inputs?.length || 0,
@@ -511,15 +567,20 @@ export async function getPageState(page: Page): Promise<object> {
     return {
       url: domSnapshot.url,
       title: domSnapshot.title,
-      pageContent
+      pageContent: content,
+      pageSummary,
+      contentTruncated: truncated,
+      contentScrolled: scrolled,
+      domSnapshot
     };
   } catch (error) {
     logger.browser.error('getState', error);
     return {
       url: page.url(),
-      title: await page.title(),
+      title: await page.title().catch(() => 'Unknown'),
       error: "Failed to extract page content",
-      pageContent: ""
+      pageContent: "Unable to extract page content. The page might be loading or in an unexpected state.",
+      isNavigating: true
     };
   }
 }

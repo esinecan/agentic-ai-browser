@@ -25,6 +25,7 @@ import { handleFailureHandler } from './core/action-handling/handlers/failureHan
 import { terminateHandler } from './core/action-handling/handlers/terminateHandler.js';
 import { getPageStateHandler } from './core/action-handling/handlers/pageStateHandler.js';
 import { notesHandler } from './core/action-handling/handlers/notesHandler.js';
+import { scrollHandler } from './core/action-handling/handlers/scrollHandler.js';
 
 // Add imports for user-defined functions
 import { 
@@ -446,6 +447,7 @@ registerState("handleFailure", handleFailureHandler);
 registerState("terminate", terminateHandler);
 registerState("getPageState", getPageStateHandler);
 registerState("notes", notesHandler);
+registerState("scroll", scrollHandler);
 
 // Add this new state handler after the other state registrations
 

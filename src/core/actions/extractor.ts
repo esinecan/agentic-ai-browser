@@ -38,24 +38,24 @@ export class ActionExtractor {
     
     try {
       // First try direct JSON parsing
-      const action: Action = JSON.parse(rawText);
+      const parsedAction = JSON.parse(rawText);
 
       // Normalize click action: if no element is provided and value starts with "a."
-      if (action.type.toLowerCase() === 'click') {
-        if (!action.element && action.value && action.value.startsWith('a.')) {
+      if (parsedAction.type?.toLowerCase() === 'click') {
+        if (!parsedAction.element && parsedAction.value && parsedAction.value.startsWith('a.')) {
           // Strip off "a."
-          const rawUrl = action.value.substring(2).trim();
+          const rawUrl = parsedAction.value.substring(2).trim();
           
           // Build a CSS selector for the anchor 
-          // (Exact match or partial, your choice: change = to *= if you prefer "contains")
           const safeHref = cssesc(rawUrl, { isIdentifier: false });
-          action.element = `a[href="${safeHref}"]`;
-          action.description = action.value;
-          delete action.value;
+          parsedAction.element = `a[href="${safeHref}"]`;
+          parsedAction.description = parsedAction.value;
+          delete parsedAction.value;
         }
       }
 
-      return action;
+      // Apply normalization to ensure all required fields have values
+      return this.normalizeActionObject(parsedAction);
     } catch (error) {
       // If direct JSON parsing fails, try other extraction methods
       logger.debug("JSON parsing failed, trying alternative extraction methods");
@@ -93,10 +93,14 @@ export class ActionExtractor {
         const parsed = JSON.parse(jsonCandidate);
         if (parsed && typeof parsed === 'object') {
           logger.debug("JSON extraction succeeded", { parsedStructure: parsed });
-          return parsed as Action;
+          // !IMPORTANT! Apply normalization to ensure property consistency
+          return this.normalizeActionObject(parsed);
         }
       } catch (error) {
-        logger.debug("JSON parsing failed for candidate", { errorMessage: error instanceof Error ? error.message : String(error), candidate: jsonCandidate.substring(0, 100) });
+        logger.debug("JSON parsing failed for candidate", { 
+          errorMessage: error instanceof Error ? error.message : String(error), 
+          candidate: jsonCandidate.substring(0, 100) 
+        });
       }
     }
 
@@ -146,7 +150,7 @@ export class ActionExtractor {
 
   private extractFromLoosePatterns(text: string): Action | null {
     try {
-      const actionTypes = ["click", "input", "navigate", "scroll", "extract", "wait", "sendHumanMessage", "sendhumanmessage", "ask_human", "ask"];
+      const actionTypes = ["click", "input", "navigate", "scroll", "extract", "wait", "sendHumanMessage", "sendhumanmessage", "ask_human", "ask", "notes"];
       let actionType: string | null = null;
 
       for (const type of actionTypes) {
@@ -158,6 +162,18 @@ export class ActionExtractor {
       }
 
       if (!actionType) return null;
+
+      // For scroll actions, detect direction
+      let direction: string | null = null;
+      if (actionType === "scroll") {
+        if (text.toLowerCase().includes("scroll down") || text.toLowerCase().includes("direction down")) {
+          direction = "down";
+        } else if (text.toLowerCase().includes("scroll up") || text.toLowerCase().includes("direction up")) {
+          direction = "up";
+        } else {
+          direction = "down"; // default direction
+        }
+      }
 
       let element: string | null = null;
       const elementMatch = text.match(/element[:\s]+["']?([^"'\n,}]+)["']?/i) ||
@@ -176,8 +192,9 @@ export class ActionExtractor {
       }
 
       const action: Partial<Action> = { type: actionType as any };
-      if (element !== undefined) (action as any).selector = element;
+      if (element !== undefined) (action as any).element = element;
       if (question !== undefined) (action as any).value = question;
+      if (direction !== null) (action as any).direction = direction;
 
       return this.normalizeActionObject(action);
     } catch (error) {
@@ -200,15 +217,18 @@ export class ActionExtractor {
   }
   
   private normalizeActionObject(obj: any): Action {
-      return {
-          type: obj.type as "input" | "navigate" | "click" | "wait" | "sendHumanMessage",
-          selector: obj.selector,
-          value: obj.value,
-          description: obj.description,
-          question: obj.question,
-          previousUrl: obj.previousUrl,
-          selectorType: obj.selectorType || "css",
-          maxWait: obj.maxWait ?? 5000
-      };
+    return {
+        type: obj.type as "input" | "navigate" | "click" | "wait" | "sendHumanMessage" | "notes" | "scroll",
+        element: obj.element || obj.selector, // Prioritize element, fall back to selector
+        value: obj.value,
+        description: obj.description,
+        question: obj.question,
+        previousUrl: obj.previousUrl,
+        selectorType: obj.selectorType || "css",
+        maxWait: obj.maxWait ?? 5000,
+        operation: obj.operation,
+        note: obj.note,
+        direction: obj.direction as "up" | "down" | undefined
+    };
   }
 }

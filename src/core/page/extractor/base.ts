@@ -21,9 +21,21 @@ export abstract class BaseExtractor implements DOMExtractorStrategy {
     fallback: T
   ): Promise<T> {
     try {
+      // First check if navigation is in progress
+      const isNavigating = await page.evaluate(() => document.readyState !== 'complete')
+        .catch(() => true); // If this fails, assume navigation is in progress
+        
+      if (isNavigating) {
+        logger.debug(`${this.name} extractor: Page is navigating, returning fallback result`);
+        return fallback;
+      }
+      
+      // Wait for a small moment to ensure DOM is stable
+      await page.waitForTimeout(50).catch(() => {});
+      
       return await page.evaluate(fn, this.selector);
     } catch (error) {
-      logger.debug('Error in page evaluation', { error });
+      logger.debug(`Error in ${this.name} extractor evaluation`, { error });
       return fallback;
     }
   }

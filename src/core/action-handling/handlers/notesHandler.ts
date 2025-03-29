@@ -29,11 +29,14 @@ export async function notesHandler(ctx: GraphContext): Promise<string> {
 
     const { operation } = ctx.action;
     
-    if (operation === 'add' && ctx.action.note) {
+    // Check both note and value fields for content (fixes compatibility with different LLMs)
+    const noteContent = ctx.action.note || ctx.action.value;
+    
+    if (operation === 'add' && noteContent) {
       // Get current URL
       const url = ctx.page.url();
       // Format note with URL
-      const noteWithUrl = `${url}\n${ctx.action.note}`;
+      const noteWithUrl = `${url}\n${noteContent}`;
       
       // Append to file (create if doesn't exist)
       await fs.promises.appendFile(sessionNotesFile, noteWithUrl + '\n\n');
@@ -43,11 +46,11 @@ export async function notesHandler(ctx: GraphContext): Promise<string> {
       ctx.successCount = (ctx.successCount || 0) + 1;
       ctx.actionFeedback = `✅ Note successfully added to ${path.basename(sessionNotesFile)}`;
       
-      ctx.history.push(`Added note (${ctx.action.note.length} chars)`);
+      ctx.history.push(`Added note (${noteContent.length} chars)`);
       
       logger.info('Note added', {
         file: path.basename(sessionNotesFile),
-        chars: ctx.action.note.length
+        chars: noteContent.length
       });
     }
     else if (operation === 'read') {

@@ -19,17 +19,17 @@ class OpenAIProcessor extends BaseLLMProcessor {
       return "Error: OpenAI API key not configured";
     }
 
-    // Build the payload for OpenAI API
-    const payload = {
-      model: MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...this.lastContext,
-        { role: "user", content: prompt }
-      ]
-    };
-  
     try {
+      // Build the payload for OpenAI API
+      const payload = {
+        model: MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...this.lastContext,
+          { role: "user", content: prompt }
+        ]
+      };
+    
       const result = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: { 
@@ -46,6 +46,23 @@ class OpenAIProcessor extends BaseLLMProcessor {
       });
       
       const response = await result.json();
+      
+      // Check for token limit errors
+      if (response.error && (
+          response.error.message?.includes("maximum context length") || 
+          response.error.message?.includes("token") ||
+          response.error.message?.includes("too long")
+        )) {
+        logger.warn('Hit token limit, pruning context and retrying', {
+          error: response.error.message,
+          contextLength: this.lastContext.length
+        });
+        
+        // Axe half the context and try again
+        this.pruneContextIfNeeded();
+        return this.processPrompt(prompt, systemPrompt);
+      }
+      
       let responseText = '';
       
       // Handle OpenAI response format
@@ -58,19 +75,42 @@ class OpenAIProcessor extends BaseLLMProcessor {
         logger.debug('Updated OpenAI context', {
           contextLength: this.lastContext.length
         });
+      } else if (response.error) {
+        logger.error('OpenAI API Error', response.error);
+        return `Error from OpenAI API: ${response.error.message}`;
       } else {
         logger.error('Unexpected response format from OpenAI', response);
         return "Error: Unexpected response format from LLM provider";
       }
       
       logger.info('LLM response received from OpenAI', {
-        responseText,
         responseLength: responseText.length
       });
       
       return responseText;
     } catch (error) {
+      // For network errors or other exceptions
       logger.error('OpenAI LLM Error: ', error);
+      
+      // Type guard for error with message property
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Check if the error might be token-related
+      if (typeof errorMessage === 'string' && (
+          errorMessage.includes("maximum context length") || 
+          errorMessage.includes("token") ||
+          errorMessage.includes("too long")
+        )) {
+        logger.warn('Possible token limit error in exception, pruning context and retrying', {
+          errorMessage,
+          contextLength: this.lastContext.length
+        });
+        
+        // Axe half the context and try again
+        this.pruneContextIfNeeded();
+        return this.processPrompt(prompt, systemPrompt);
+      }
+      
       return "Error communicating with OpenAI API";
     }
   }

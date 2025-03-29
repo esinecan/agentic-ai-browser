@@ -10,10 +10,22 @@ dotenv.config();
 
 // Setup keyboard event handler for stopping the agent with Ctrl+C
 process.on('SIGINT', async () => {
-  console.log('\nReceived SIGINT (Ctrl+C). Stopping agent...');
-  await stopAgent();
-  //logger.close();
-  process.exit(0);
+  console.log('\nReceived SIGINT (Ctrl+C). Gracefully stopping agent and saving state...');
+  
+  try {
+    // Save state and stop agent
+    await stopAgent();
+    
+    // Give logging time to complete
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    logger.info('Graceful shutdown complete');
+    logger.close();
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+  } finally {
+    process.exit(0);
+  }
 });
 
 process.on('unhandledRejection', (reason, promise) => {

@@ -2,8 +2,7 @@
  * Represents an action to be performed in the browser
  */
 export interface Action {
-  type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage";
-  selector?: string;
+  type: "input" | "navigate" | "click" | "wait" | "sendHumanMessage" | "notes" | "scroll";
   element?: string;
   value?: string;
   question?: string;
@@ -11,6 +10,9 @@ export interface Action {
   selectorType: "css" | "xpath" | "text";
   maxWait: number;
   previousUrl?: string;
+  operation?: "add" | "read";
+  note?: string;
+  direction?: "up" | "down"; // For scroll action
 }
 
 /**
@@ -41,3 +43,4 @@ export const ActionSchemaReference = {
   question: "string?",
   previousUrl: "string?"
 };
+

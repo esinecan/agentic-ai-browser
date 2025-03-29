@@ -8,6 +8,7 @@ export interface PageState {
   url: string;
   title: string;
   domSnapshot?: any;
+  isNavigating?: boolean;  // Add this property
 }
 
 /**

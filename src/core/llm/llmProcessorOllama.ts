@@ -57,18 +57,18 @@ class OllamaProcessor extends BaseLLMProcessor {
   // No need to override getSystemPrompt() - using the base class implementation
   
   protected async processPrompt(prompt: string, systemPrompt: string): Promise<string> {
-    // Build the payload for Ollama API
-    const payload = {
-      model: MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...this.lastContext,
-        { role: "user", content: prompt }
-      ],
-      response_format: RESPONSE_FORMAT
-    };
-  
     try {
+      // Build the payload for Ollama API
+      const payload = {
+        model: MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...this.lastContext,
+          { role: "user", content: prompt }
+        ],
+        response_format: RESPONSE_FORMAT
+      };
+    
       const result = await fetch(`${OLLAMA_HOST}/v1/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -83,6 +83,23 @@ class OllamaProcessor extends BaseLLMProcessor {
       
       const response = await result.json();
       let responseText = '';
+      
+      // Check for token limit errors
+      if (response.error && (
+          response.error.message?.includes("maximum context length") || 
+          response.error.message?.includes("token") ||
+          response.error.message?.includes("too large") ||
+          response.error.message?.includes("too long")
+        )) {
+        logger.warn('Hit token limit, pruning context and retrying', {
+          error: response.error.message,
+          contextLength: this.lastContext.length
+        });
+        
+        // Axe half the context and try again
+        this.pruneContextIfNeeded();
+        return this.processPrompt(prompt, systemPrompt);
+      }
       
       // Handle Ollama-specific response format
       if (response.context) {
@@ -102,6 +119,9 @@ class OllamaProcessor extends BaseLLMProcessor {
           responseText = response.choices[0].message.content;
         } else if (response.response) {
           responseText = response.response;
+        } else if (response.error) {
+          logger.error('Ollama API Error', response.error);
+          return `Error from Ollama API: ${response.error}`;
         }
         
         // Update context manually
@@ -115,7 +135,28 @@ class OllamaProcessor extends BaseLLMProcessor {
       
       return responseText;
     } catch (error) {
-      logger.error(' LLM Error: ', error);
+      logger.error('Ollama LLM Error: ', error);
+      
+      // Type guard for error with message property
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Check if the error might be token-related
+      if (typeof errorMessage === 'string' && (
+          errorMessage.includes("maximum context length") || 
+          errorMessage.includes("token") ||
+          errorMessage.includes("too large") ||
+          errorMessage.includes("too long")
+        )) {
+        logger.warn('Possible token limit error in exception, pruning context and retrying', {
+          errorMessage,
+          contextLength: this.lastContext.length
+        });
+        
+        // Axe half the context and try again
+        this.pruneContextIfNeeded();
+        return this.processPrompt(prompt, systemPrompt);
+      }
+      
       return "Error communicating with Ollama API";
     }
   }

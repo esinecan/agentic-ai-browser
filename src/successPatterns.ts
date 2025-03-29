@@ -5,7 +5,7 @@ import { Action } from './browserExecutor.js';
 
 interface SuccessPattern {
   actionType: string;
-  selector?: string;
+  element?: string;  // Change from selector to element
   domain: string;
   successCount: number;
   lastSuccess: string; // ISO date string
@@ -53,7 +53,7 @@ export class SuccessPatterns {
     const key = `${action.type}:${action.element || action.value || ''}`;
     const existingPattern = this.patterns.find(p => 
       p.actionType === action.type && 
-      p.selector === (action.element || action.value) && 
+      p.element === action.element &&
       p.domain === domain
     );
     
@@ -63,7 +63,7 @@ export class SuccessPatterns {
     } else {
       this.patterns.push({
         actionType: action.type,
-        selector: action.element || action.value,
+        element: action.element || action.value,
         domain,
         successCount: 1,
         lastSuccess: new Date().toISOString()
@@ -115,7 +115,7 @@ export class SuccessPatterns {
     
     return domainPatterns.map(p => {
       if (p.actionType === 'click' || p.actionType === 'input') {
-        return `Try using selector "${p.selector}" for ${p.actionType} actions (worked ${p.successCount} times)`; 
+        return `Try using selector "${p.element}" for ${p.actionType} actions (worked ${p.successCount} times)`;
       }
       return `"${p.actionType}" actions work well on this site (worked ${p.successCount} times)`;
     });
