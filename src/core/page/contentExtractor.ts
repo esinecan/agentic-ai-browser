@@ -6,7 +6,7 @@ import logger from '../../utils/logger.js';
  * and dynamically loaded content
  */
 export class ContentExtractor {
-  private static readonly MAX_CONTENT_LENGTH = 30000;
+  private static readonly MAX_CONTENT_LENGTH = 10000;
   private static readonly SCROLL_STEP = 800;
   private static readonly MAX_SCROLLS = 5;
   

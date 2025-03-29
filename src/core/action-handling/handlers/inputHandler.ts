@@ -2,6 +2,7 @@ import { GraphContext } from "../../../browserExecutor.js";
 import { getElement, verifyAction } from "../../../browserExecutor.js";
 import { SelectorFallbacks } from "../../elements/strategies/SelectorFallbacks.js";
 import { SuccessPatterns } from "../../../successPatterns.js";
+import { ensureElementVisible } from "../../../utils/visibilityUtils.js";
 import logger from "../../../utils/logger.js";
 
 export async function inputHandler(ctx: GraphContext): Promise<string> {
@@ -34,6 +35,9 @@ export async function inputHandler(ctx: GraphContext): Promise<string> {
     
     // If still no element found, throw error
     if (!elementHandle) throw new Error("Element not found");
+    
+    // Ensure element is visible before interacting with it
+    await ensureElementVisible(ctx.page, elementHandle);
     
     // FOCUS-FIRST APPROACH: Click to focus before filling
     await elementHandle.click({ timeout: ctx.action.maxWait / 2 });

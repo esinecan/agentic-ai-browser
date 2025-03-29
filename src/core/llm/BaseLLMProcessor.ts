@@ -133,6 +133,24 @@ protected static readonly SYSTEM_PROMPT = `
   }
   
   /**
+   * Axe half the conversation context when token limits are hit
+   * This is a simple but effective approach - no predictions, just react when needed
+   */
+  protected pruneContextIfNeeded(): void {
+    // If we have context to prune
+    if (this.lastContext.length > 2) {
+      // Keep only the most recent half of messages (minimum 2)
+      const keepCount = Math.max(Math.floor(this.lastContext.length / 2), 2);
+      this.lastContext = this.lastContext.slice(-keepCount);
+      
+      logger.info('Context pruned due to token limit', {
+        beforeCount: this.lastContext.length * 2,  // approximate original count
+        afterCount: this.lastContext.length
+      });
+    }
+  }
+  
+  /**
    * Generate the next action based on the current state and context
    */
   async generateNextAction(state: object, context: GraphContext): Promise<GraphContext["action"] | null> {

@@ -109,6 +109,14 @@ class PageAnalyzer {
     +{static} extractComprehensiveSnapshot(page: Page): Promise<DOMSnapshot>
     +{static} extractSpecific(page: Page, extractorNames: string[]): Promise<Partial<DOMSnapshot>>
 }
+class ContentExtractor {
+    -{static} MAX_CONTENT_LENGTH: 10000
+    -{static} SCROLL_STEP: 800
+    -{static} MAX_SCROLLS: 5
+    +{static} extract(page: Page, options?: { maxLength?: number | undefined; maxScrolls?: number | undefined; shouldScroll?: boolean | undefined; }): Promise<{ content: string; truncated: boolean; scrolled: boolean; contentLength: number; originalLength: number; }>
+    -{static} extractVisibleContent(page: Page): Promise<string>
+    -{static} mightHaveMoreContent(page: Page): Promise<boolean>
+}
 interface ElementContext {
     +previousAttempts: string[]
     +startTime: number
@@ -118,21 +126,20 @@ interface ElementContext {
 interface ElementStrategy {
     +name: string
     +priority: number
-    +canHandle(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, context: ElementContext): Promise<boolean>
-    +findElement(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, context: ElementContext): Promise<ElementHandle<Node> | null>
+    +canHandle(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }, context: ElementContext): Promise<boolean>
+    +findElement(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }, context: ElementContext): Promise<ElementHandle<Node> | null>
 }
 abstract class BaseElementStrategy implements ElementStrategy {
     +name: string
     +priority: number
-    +{abstract} canHandle(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, context: ElementContext): Promise<boolean>
-    +{abstract} findElement(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, context: ElementContext): Promise<ElementHandle<Node> | null>
+    +{abstract} canHandle(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }, context: ElementContext): Promise<boolean>
+    +{abstract} findElement(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }, context: ElementContext): Promise<ElementHandle<Node> | null>
     #safeWaitForSelector(page: Page, selector: string, timeout: number): Promise<boolean>
-    #finalizeElement(element: ElementHandle<Node> | null, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }): Promise<ElementHandle<Node> | null>
+    #finalizeElement(element: ElementHandle<Node> | null, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }): Promise<ElementHandle<Node> | null>
     #logSuccess(selector: string, context: ElementContext): void
 }
 interface Action {
-    +type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage"
-    +selector?: string | undefined
+    +type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"
     +element?: string | undefined
     +value?: string | undefined
     +question?: string | undefined
@@ -140,6 +147,9 @@ interface Action {
     +selectorType: "css" | "xpath" | "text"
     +maxWait: number
     +previousUrl?: string | undefined
+    +operation?: "add" | "read" | undefined
+    +note?: string | undefined
+    +direction?: "up" | "down" | undefined
 }
 interface ActionHistoryEntry {
     +action: Action
@@ -174,18 +184,19 @@ class SingleElementStrategy extends BaseElementStrategy {
 class ElementFinder {
     -strategies: ElementStrategy[]
     +registerStrategy(strategy: ElementStrategy): void
-    +findElement(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }): Promise<ElementHandle<Node> | null>
+    +findElement(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }): Promise<ElementHandle<Node> | null>
     +getAlternativeSuggestions(page: Page, selector: string): Promise<string[]>
 }
 +testExtractors(page: Page): Promise<void>
 +generatePageSummary(page: Page, domSnapshot: any): Promise<string>
++getChromeProcess(): ChildProcess | null
 interface GraphContext {
     +browser?: Browser | undefined
     +page?: Page | undefined
-    +action?: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; } | undefined
+    +action?: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; } | undefined
     +retries?: number | undefined
     +history: string[]
-    +actionHistory?: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }[] | undefined
+    +actionHistory?: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }[] | undefined
     +actionFeedback?: string | undefined
     +startTime?: number | undefined
     +lastScreenshot?: string | undefined
@@ -202,10 +213,11 @@ interface GraphContext {
     +compressedHistory?: string[] | undefined
 }
 +launchBrowser(): Promise<Browser>
++waitForChromeDevTools(timeoutMs?: number): Promise<void>
 +createPage(browser: Browser): Promise<Page>
 +doRetry(fn: () => Promise<T>, retries?: number, delayMs?: number): Promise<T>
 +verifyElementExists(page: Page, selector: string, selectorType?: string): Promise<{ exists: boolean; count: number; suggestion: string | null; }>
-+getElement(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }): Promise<ElementHandle<Node> | null>
++getElement(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }): Promise<ElementHandle<Node> | null>
 +captureCloseMatches(page: Page, failedSelector: string): Promise<void>
 +textSimilarity(a: string, b: string): number
 +findBestMatch(page: Page, reference: string): Promise<string | null>
@@ -213,7 +225,7 @@ interface GraphContext {
 +getPageState(page: Page): Promise<object>
 +extractDOMSnapshotLite(page: Page): Promise<any>
 +extractDOMSnapshot(page: Page): Promise<any>
-+verifyAction(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }): Promise<boolean>
++verifyAction(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }): Promise<boolean>
 +compressHistory(history: string[], maxItems?: number): string[]
 +findRepeatedPatterns(history: string[]): { pattern: string; count: number; success: boolean; }[]
 +navigate(page: Page, url: string): Promise<boolean>
@@ -243,13 +255,14 @@ interface PageState {
     +url: string
     +title: string
     +domSnapshot?: any
+    +isNavigating?: boolean | undefined
 }
 +detectProgress(ctx: GraphContext, previousState: PageState | null, currentState: PageState | null): void
 +calculateProgressPercentage(ctx: GraphContext): number
 +isStuck(ctx: GraphContext): boolean
 +getProgressSummary(ctx: GraphContext): string
 +runStateMachine(ctx: GraphContext): Promise<void>
-+isRedundantAction(currentAction: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, history: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }[]): boolean
++isRedundantAction(currentAction: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }, history: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }[]): boolean
 +generateActionFeedback(ctx: GraphContext): string
 +registerState(name: string, handler: StateHandler): void
 +shuffleArray(array: T[]): T[]
@@ -260,7 +273,7 @@ interface PageState {
 +createTestContext(options?: { userGoal?: string | undefined; history?: string[] | undefined; page?: Page | undefined; browser?: Browser | undefined; action?: Action | undefined; }): GraphContext
 +delay(ms: number): Promise<void>
 interface LLMProcessor {
-    +generateNextAction(state: object, context: GraphContext): Promise<{ type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; } | null | undefined>
+    +generateNextAction(state: object, context: GraphContext): Promise<{ type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; ... 6 more ...; direction?: "up" | ... 1 more ... | undefined; } | null | undefined>
 }
 interface BrowserState {
     +url: string
@@ -309,7 +322,8 @@ abstract class BaseLLMProcessor implements LLMProcessor {
     #buildFeedbackSection(context: GraphContext): string
     #sanitizeUserMessage(message: string): string
     #updateContext(userMessage: string, assistantResponse: string): void
-    +generateNextAction(state: object, context: GraphContext): Promise<{ type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; } | null | undefined>
+    #pruneContextIfNeeded(): void
+    +generateNextAction(state: object, context: GraphContext): Promise<{ type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; ... 6 more ...; direction?: "up" | ... 1 more ... | undefined; } | null | undefined>
     #{static} SYSTEM_PROMPT: string
 }
 class OllamaProcessor extends BaseLLMProcessor {
@@ -325,7 +339,7 @@ class OpenAIProcessor extends BaseLLMProcessor {
 }
 interface SuccessPattern {
     +actionType: string
-    +selector?: string | undefined
+    +element?: string | undefined
     +domain: string
     +successCount: number
     +lastSuccess: string
@@ -338,12 +352,20 @@ class SuccessPatterns {
     -lastFailureTime: number
     -loadPatterns(): void
     +savePatterns(): void
-    +recordSuccess(action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, domain: string): void
-    -isSignificantNavigation(action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 4 more ...; note?: string | undefined; }, domain: string): boolean
+    +recordSuccess(action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }, domain: string): void
+    -isSignificantNavigation(action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }, domain: string): boolean
     +getSuggestionsForDomain(domain: string): string[]
     +recordFailure(): void
     +resetFailures(): void
 }
+class SelectorFallbacks {
+    +{static} getFallbackSelectors(action: Action, url: string): string[]
+    -{static} detectElementPurpose(action: Action): "search-input" | "search-button" | "submit-button" | "navigation" | "general-input" | "general-button"
+    -{static} getFallbacksByPurpose(purpose: string): string[]
+    +{static} findElementByText(page: Page, text: string, tag?: string): Promise<ElementHandle<Node> | null>
+    +{static} tryFallbacks(page: Page, action: Action): Promise<ElementHandle<Node> | null>
+}
++ensureElementVisible(page: Page, elementHandle: ElementHandle<Node>): Promise<boolean>
 +clickHandler(ctx: GraphContext): Promise<string>
 +inputHandler(ctx: GraphContext): Promise<string>
 +navigateHandler(ctx: GraphContext): Promise<string>
@@ -352,6 +374,7 @@ class SuccessPatterns {
 +terminateHandler(ctx: GraphContext): Promise<string>
 +getPageStateHandler(ctx: GraphContext): Promise<string>
 +notesHandler(ctx: GraphContext): Promise<string>
++scrollHandler(ctx: GraphContext): Promise<string>
 interface UserFunction {
     +name: string
     +args: string[]
@@ -365,6 +388,7 @@ interface UserFunction {
 +isListFunctionsRequest(input: string): boolean
 +listAvailableFunctions(): Promise<string>
 +promptUser(question: string): Promise<string>
++sexyPrint(text: string, delay?: number): Promise<void>
 +processUserFunctionCall(ctx: GraphContext, functionCall: string): Promise<string>
 +sendHumanMessageHandler(ctx: GraphContext): Promise<string>
 +createSendHumanMessageAction(question: string): { type: "sendHumanMessage"; question: string; selectorType: "css" | "text" | "xpath"; maxWait: number; }

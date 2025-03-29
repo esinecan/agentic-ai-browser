@@ -22,7 +22,7 @@
 
 - Visit https://www.gsmarena.com. Search for 'iPhone 15 Pro' and try tto go to the first result. tell me battery life & camera specs. then repeat it for Samsung Galaxy S23 Ultra. Summarize which one seems better based on those two factors.
 
-- Go to https://www.godaddy.com and search for 'coolprojectidea.com' and see if it's taken. If it is, try alternatives like appending'2025' or 'AI' to the name, or you know, create variations until you find a usable one.
+- Go to https://www.godaddy.com and search for 'goodmusic.com' and see if it's taken. If it is, you'll need to get a bit creative. Try alternatives that are semantically similar. Create differene variations one by one, then try them out until you find a usable one.
 
 - Find a list of countries by searching on www.google.com. go to first search result and pick a random country. Tell the user its capital but from your own memory. If they want more info, offer to provide its population and time zone. but this time population info must be current. so go to google again and search that country + population. Find a link to wiki or some other encyclopedic source and click. Tell user the current population. If he responds positively, do the same for the time zone.
 

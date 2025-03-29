@@ -3,6 +3,7 @@ import { GraphContext } from "../../../browserExecutor.js";
 import { getElement, verifyAction } from "../../../browserExecutor.js";
 import { SuccessPatterns } from "../../../successPatterns.js";
 import { SelectorFallbacks } from "../../elements/strategies/SelectorFallbacks.js";
+import { ensureElementVisible } from "../../../utils/visibilityUtils.js";
 import logger from "../../../utils/logger.js";
 
 // Default value for the universal submit selector if not set in environment variables
@@ -89,29 +90,60 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
     }
 
     try {
+      // Ensure element is visible before trying to click
+      await ensureElementVisible(ctx.page, elementHandle);
+      
       // Try the regular Playwright click first
       await elementHandle.click({ timeout: ctx.action.maxWait });
     } catch (error) {
-      // If regular click fails, try JavaScript click as fallback
-      logger.info('Regular click failed, trying JavaScript click', {
-        element: ctx.action.element,
-        error: error instanceof Error ? error.message : String(error)
-      });
-      
-      // Try JavaScript click which can bypass overlay issues
+      // If regular click fails, check if it's a link and navigate directly
       try {
-        await ctx.page.evaluate((element: HTMLElement) => {
-          if (element && typeof element.click === 'function') {
-            element.click();
-            return true;
-          }
-          return false;
-        }, elementHandle as any);
-      } catch (jsError) {
-        // Both methods failed, throw original error
-        logger.error('JavaScript click also failed', {
+        logger.info('Regular click failed, checking if element is a link', {
           element: ctx.action.element,
-          error: jsError instanceof Error ? jsError.message : String(jsError)
+          error: error instanceof Error ? error.message : String(error)
+        });
+        
+        // Check if it's an anchor tag with href
+        const href = await elementHandle.evaluate((el: HTMLElement) => {
+          if (el.tagName === 'A' && el.hasAttribute('href')) {
+            return el.getAttribute('href');
+          }
+          return null;
+        });
+        
+        // If it's a link with href, navigate directly instead of clicking
+        if (href) {
+          logger.info('Element is a link, navigating directly', { href });
+          
+          // Resolve relative URLs
+          let fullUrl = href;
+          if (href.startsWith('/')) {
+            const baseUrl = new URL(ctx.page.url());
+            fullUrl = `${baseUrl.origin}${href}`;
+          }
+          
+          // Navigate directly to the URL
+          await ctx.page.goto(fullUrl, { timeout: 10000 });
+          
+          // Navigation successful, no need for JavaScript click
+          logger.info('Direct navigation successful', { url: fullUrl });
+        } else {
+          // Not a link, try JavaScript click as last resort
+          logger.info('Element is not a link, trying JavaScript click');
+          await ctx.page.evaluate((element: HTMLElement) => {
+            if (element && typeof element.click === 'function') {
+              element.click();
+              return true;
+            }
+            return false;
+          }, elementHandle as any);
+        }
+      } catch (fallbackError) {
+        // Both methods failed
+        logger.error('All click fallbacks failed', {
+          element: ctx.action.element,
+          originalError: error instanceof Error ? error.message : String(error),
+          fallbackError: fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
         });
         throw error; // Re-throw the original error
       }

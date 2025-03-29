@@ -25,6 +25,7 @@ import { handleFailureHandler } from './core/action-handling/handlers/failureHan
 import { terminateHandler } from './core/action-handling/handlers/terminateHandler.js';
 import { getPageStateHandler } from './core/action-handling/handlers/pageStateHandler.js';
 import { notesHandler } from './core/action-handling/handlers/notesHandler.js';
+import { scrollHandler } from './core/action-handling/handlers/scrollHandler.js';
 
 // Add imports for user-defined functions
 import { 
@@ -59,6 +60,21 @@ function promptUser(question: string): Promise<string> {
       rl.close();
       resolve(answer);
     });
+  });
+}
+
+function sexyPrint(text: string, delay = 20): Promise<void> {
+  return new Promise((resolve) => {
+    let i = 0;
+    const interval = setInterval(() => {
+      process.stdout.write(text[i]);
+      i++;
+      if (i >= text.length) {
+        clearInterval(interval);
+        process.stdout.write("\n");
+        resolve();
+      }
+    }, delay);
   });
 }
 
@@ -446,6 +462,7 @@ registerState("handleFailure", handleFailureHandler);
 registerState("terminate", terminateHandler);
 registerState("getPageState", getPageStateHandler);
 registerState("notes", notesHandler);
+registerState("scroll", scrollHandler);
 
 // Add this new state handler after the other state registrations
 
@@ -495,7 +512,10 @@ export async function runGraph(): Promise<void> {
   // Prompt the user for their automation goal
   const userGoalPrompt = "Please enter your goal for this automation:\n" +
     "(Tip: You can use ::functions to list available function templates)";
-  const userGoal = await promptUser(userGoalPrompt);
+  //const userGoal = await promptUser(userGoalPrompt);
+  const userGoal = process.env.goal || "";
+  console.log(userGoalPrompt);
+  await sexyPrint(userGoal);
   
   // Check for special commands
   if (isListFunctionsRequest(userGoal)) {

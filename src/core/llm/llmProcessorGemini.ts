@@ -88,24 +88,46 @@ class GeminiProcessor extends BaseLLMProcessor {
 
       logger.info('Gemini prompt: \n' + prompt + '\n');
 
-      // Request completion from Gemini
-      const result = await this.model.generateContent({
-        contents,
-      });
+      try {
+        // Request completion from Gemini
+        const result = await this.model.generateContent({
+          contents,
+        });
 
-      const responseText = result.response.text();
-      
-      logger.info('Gemini response: \n' + responseText + '\n');
+        const responseText = result.response.text();
+        
+        logger.info('Gemini response: \n' + responseText + '\n');
 
-      // Update conversation context
-      this.updateContext(prompt, responseText);
-      
-      // Keep conversation context manageable
-      if (this.lastContext.length > 10) {
-        this.lastContext = this.lastContext.slice(-10);
+        // Update conversation context
+        this.updateContext(prompt, responseText);
+        
+        // Keep conversation context manageable
+        if (this.lastContext.length > 10) {
+          this.lastContext = this.lastContext.slice(-10);
+        }
+
+        return responseText;
+      } catch (error: any) {
+        // Check for token limit errors
+        if (error.message && (
+            error.message.includes("maximum context length") || 
+            error.message.includes("token") ||
+            error.message.includes("content size") ||
+            error.message.includes("too long")
+          )) {
+          logger.warn('Hit token limit in Gemini, pruning context and retrying', {
+            error: error.message,
+            contextLength: this.lastContext.length
+          });
+          
+          // Axe half the context and try again
+          this.pruneContextIfNeeded();
+          return this.processPrompt(prompt, systemPrompt);
+        } else {
+          // Rethrow other errors
+          throw error;
+        }
       }
-
-      return responseText;
     } catch (error) {
       logger.error('Gemini LLM Error: ', error);
       return "Error communicating with Gemini API";
