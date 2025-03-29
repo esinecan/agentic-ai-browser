@@ -12,13 +12,13 @@ This project is a **AI-driven web automation agent** that uses **Playwright** fo
 - **Action Verification & Recovery** – Ensures actions succeed with smart fallbacks and alternative selectors
 - **Context-Aware Interaction** – Maintains task history and adapts based on successes and failures
 - **Multi-LLM Support** – Works with both **Gemini**, **Ollama**, and **OpenAI** models for flexibility
+- **Page Content Management** – Progressive scrolling and content extraction for text-heavy pages
 - **Improved Resilience** – Enhanced retry logic with increased attempt limits
 - **Agent State Management** – Track and control agent execution state
 - **Manual Intervention** – Request human help when the agent is stuck
 - **Session Notes** – Save and retrieve information across multiple pages during a session
-- **Handles complex web navigation tasks** - Sometimes. Other times, well...
-- **Automatic action selection and execution** - Modular action structure allows easy extension
-- **Human-in-the-loop assistance when needed** - The LLM learns to consult the human when stuck in context, as well as repeated failure detection
+- **Custom Automation Functions** – User-defined functions for common research and investigation tasks
+- **Robust Browser Management** – Improved Chrome process handling with DevTools polling and cleanup
 
 ---
 
@@ -27,6 +27,7 @@ This project is a **AI-driven web automation agent** that uses **Playwright** fo
 ### 1️⃣ Prerequisites
 Ensure you have the following installed:
 - [Node.js 18+](https://nodejs.org/)
+- [Ollama](https://ollama.ai/) (optional, for local models)
 
 ### 2️⃣ Clone the Repository
 ```sh
@@ -68,6 +69,10 @@ LOG_DIR=./logs
 SCREENSHOT_DIR=./screenshots
 DEBUG_LEVEL=0
 UNIVERSAL_SUBMIT_SELECTOR=enterKeyPress
+
+# Browser Configuration (Windows example)
+DATA_DIR=C:\Users\username\AppData\Local\Google\Chrome\User Data
+PLAYWRIGHT_BROWSERS_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
 ```
 
 ### 4️⃣ Install Dependencies
@@ -80,7 +85,7 @@ npm install
 npm run dev
 ```
 
-### 6️⃣ Build & Run in Production
+### 6️⃣ Build & Run
 ```sh
 npm run build
 npm start
@@ -98,6 +103,7 @@ The project features a sophisticated DOM extraction system that provides structu
 - **BaseExtractor**: Abstract class implementing common extraction utilities
 - **PageAnalyzer**: Orchestrates extraction process and combines results
 - **DOMExtractorRegistry**: Manages registration and lookup of extractors
+- **ContentExtractor**: Handles progressive content loading for long pages
 - **Configuration System**: Controls extraction depth and behavior
 
 #### Extractor Types:
@@ -117,6 +123,7 @@ The project features a sophisticated DOM extraction system that provides structu
 - **Diagnostic Information**: Detailed extraction metrics and diagnostics
 - **Visibility Detection**: Distinguishes visible vs hidden elements
 - **Flexible Configuration**: Controls extraction depth and behavior
+- **Progressive Content Loading**: Smart scrolling for text-heavy pages
 
 #### Extraction Process:
 1. **Initialization**: PageAnalyzer configures extraction parameters
@@ -189,6 +196,7 @@ Actions flow through a sophisticated pipeline with robust execution, verificatio
 - **Wait**: Managed execution pauses with dynamic timing
 - **SendHumanMessage**: Contextual human assistance requests with screenshot capture
 - **Notes**: Save and retrieve information across multiple pages during a session
+- **Scroll**: Control page scrolling for viewing more content or returning to top
 
 #### Smart Execution Features:
 - **Universal Form Submission**: Special handling for Enter key presses
@@ -197,6 +205,7 @@ Actions flow through a sophisticated pipeline with robust execution, verificatio
 - **URL Normalization**: Automatic conversion of relative URLs to absolute
 - **Action Context Enrichment**: Previous URL tracking and domain identification
 - **Session Notes**: Persist important information across page navigations
+- **Content Visibility Management**: Ensures elements are visible before interaction
 
 #### Verification & Success Tracking:
 - **Type-Specific Verification**: Custom verification logic based on action type
@@ -241,7 +250,7 @@ The system uses a sophisticated state machine architecture for reliable executio
 #### Key States:
 - **start**: Initializes browser, page, and context objects
 - **chooseAction**: Requests next action from LLM with dynamic context enrichment
-- **[action types]**: Specialized handlers for each action type (click, input, navigate, notes, etc.)
+- **[action types]**: Specialized handlers for each action type (click, input, navigate, notes, scroll, etc.)
 - **handleFailure**: Progressive retry logic with pattern recognition
 - **sendHumanMessage**: Human intervention interface with screenshot capture
 - **terminate**: Graceful shutdown and resource cleanup
@@ -283,7 +292,7 @@ Support for multiple LLM backends with a unified interface:
 #### Providers:
 - **Gemini**: Using Google's Gemini API
 - **Ollama**: Local LLM deployment
-- **OpenAI**: OpenAI GPT models and compatible APIs
+- **OpenAI**: OpenAI GPT models and compatible APIs (including DeepSeek)
 
 #### Prompt Architecture:
 - **System Prompt**: Defines agent role and capabilities
@@ -305,6 +314,17 @@ The agent can maintain persistent notes across pages during a browsing session:
 - **Multi-step Processes**: Maintaining context across complex workflows
 - **Data Collection**: Gathering specific details from various sources
 - **Comparison Shopping**: Recording prices and details from different sites
+
+### 7. User-Defined Functions
+The system includes predefined function templates for common research and learning tasks:
+
+#### Available Functions:
+- **learnJargon**: Research terminology and create glossaries for any topic
+- **howToWithThisTech**: Create step-by-step guides for using specific technologies
+- **evaluateTechLandscape**: Conduct deep analysis of technology stacks for adoption
+- **lookIntoTopic**: Research topics from multiple angles (both positive and critical)
+- **investigateFromTrustedSources**: Analyze specific sources for a comprehensive view
+- **compareOpinions**: Find balanced perspectives on controversial topics
 
 ---
 
@@ -336,7 +356,7 @@ For using Google's Gemini API:
 - Set `GEMINI_API_KEY` with your API key
 - Set `LLM_MODEL` to your preferred Gemini model (e.g., gemini-2.0-flash-lite)
 
-### OpenAI and Compatible APIs (New!)
+### OpenAI and Compatible APIs
 For using OpenAI and compatible APIs like DeepSeek:
 - Set `LLM_PROVIDER=openai`
 - Set `OPENAI_API_KEY` with your API key
@@ -352,6 +372,19 @@ For using OpenAI and compatible APIs like DeepSeek:
 
 The agent supports user-defined function templates that can be invoked with a simple syntax:
 
+```
+!functionName(arg1, arg2)
+```
+
+For example:
+```
+!evaluateTechLandscape(Next.js)
+!lookIntoTopic(quantum computing)
+!compareOpinions(ChatGPT)
+```
+
+These functions allow you to quickly run common research and information-gathering patterns without having to explain the exact steps each time.
+
 ---
 
 ## Future Plans
@@ -360,14 +393,18 @@ The agent supports user-defined function templates that can be invoked with a si
 ✅ **Intelligent page interpretation**
 ✅ **Multi-LLM support**
 ✅ **Agent state management**
-✅ **DOM extraction system**
+✅ **DOM extraction system** 
 ✅ **Element selection strategies**
 ✅ **Fixed position element detection fix**
 ✅ **Session notes system**
+✅ **Progressive content loading with scroll actions**
+✅ **Improved Chrome process management**
+✅ **User-defined function templates**
 🔜 **Workflow recording & replay**
 🔜 **Support for API-based automation**
 🔜 **Multi-tab and window handling**
-🔜 **Extended form interaction capabilities**
+🔜 **Advanced form interaction capabilities**
+🔜 **Context-aware selector generation with ML**
 
 ---
 
