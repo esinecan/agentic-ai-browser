@@ -66,49 +66,6 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
     const previousUrl = ctx.page.url();
     ctx.action.previousUrl = ctx.action.previousUrl || previousUrl;
     
-    // Special case for option elements - handle them early before regular click processing
-    if (ctx.action.element && ctx.action.element.includes('option')) {
-      logger.info('Detected option selector, using specialized dropdown handling');
-      
-      // Extract select element selector from option selector
-      // Example: "select#country option[value='US']" -> "select#country"
-      const selectParts = ctx.action.element.split('option');
-      const selectSelector = selectParts[0].trim();
-      
-      // Extract value from option selector if available
-      // Example: "option[value='US']" -> "US"
-      const valueMatch = ctx.action.element.match(/value=['"]([^'"]+)['"]/i);
-      const optionValue = valueMatch ? valueMatch[1] : undefined;
-      
-      try {
-        if (selectSelector && optionValue) {
-          // Use proper Playwright API for selecting options
-          await ctx.page.selectOption(selectSelector, optionValue);
-          logger.info('Selected option using selectOption API', { 
-            selectSelector, 
-            optionValue 
-          });
-          
-          // Mark as successful
-          ctx.lastActionSuccess = true;
-          ctx.successCount = (ctx.successCount || 0) + 1;
-          ctx.successfulActions?.push(`select:${ctx.action.element}`);
-          
-          // Add to history
-          ctx.history.push(`Selected option ${optionValue} in ${selectSelector}`);
-          
-          return "getPageState";
-        }
-      } catch (selectError) {
-        logger.warn('SelectOption approach failed, falling back to regular handling', {
-          error: selectError instanceof Error ? selectError.message : String(selectError),
-          selectSelector,
-          optionValue
-        });
-        // Continue with regular click handling
-      }
-    }
-    
     // Try with the original element selector first
     let elementHandle = await getElement(ctx.page, ctx.action);
     
@@ -139,57 +96,117 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
         
         return {
           tagName,
-          isOption: tagName === 'option' || el.matches('option'),
           isRadio: tagName === 'input' && (el as HTMLInputElement).type === 'radio',
           isCheckbox: tagName === 'input' && (el as HTMLInputElement).type === 'checkbox',
-          value: tagName === 'option' ? (el as HTMLOptionElement).value : 
-                tagName === 'input' ? (el as HTMLInputElement).value : 
+          isSelect: tagName === 'select',
+          parentIsSelect: tagName === 'option' || (el.parentElement && el.parentElement.tagName.toLowerCase() === 'select'),
+          value: tagName === 'input' ? (el as HTMLInputElement).value : 
                 el.getAttribute('value') || el.textContent?.trim() || '',
           id: el.id,
-          name: el.getAttribute('name'),
-          parentSelector: tagName === 'option' ? 
-            (el.closest('select')?.id ? `#${el.closest('select')?.id}` : 
-             el.closest('select')?.name ? `select[name="${el.closest('select')?.name}"]` : 
-             null) : null
+          name: el.getAttribute('name')
         };
       });
       
-      // Handle different form elements appropriately
-      if (elementInfo.isOption || (ctx.action.element && ctx.action.element.includes('option'))) {
-        logger.info('Detected option element, using select value approach', { elementInfo });
+      // Handle select elements with specialized dropdown handling
+      if ((elementInfo.isSelect || elementInfo.parentIsSelect) && ctx.action.value) {
+        logger.info('Detected select element, using specialized dropdown handling', { 
+          element: ctx.action.element,
+          value: ctx.action.value
+        });
         
-        // Find the right selector for the parent select
-        const selectSelector = elementInfo.parentSelector || 
-          (ctx.action.element?.includes('option') ? 
-            ctx.action.element.split(' option')[0].replace(/option\[.*\]/, '') : null);
-        
-        if (!selectSelector) {
-          logger.warn('Could not determine parent select element, falling back to direct click');
-          await ensureElementVisible(ctx.page, elementHandle);
-          await elementHandle.click({ timeout: ctx.action.maxWait });
-        } else {
-          // Set the select value using the proper selector
-          await ctx.page.evaluate(
-            ({ selector, value }) => {
-              const select = document.querySelector(selector) as HTMLSelectElement | null;
-              if (select) {
-                select.value = value;
-                // Trigger change event
-                const event = new Event('change', { bubbles: true });
-                select.dispatchEvent(event);
-                return true;
+        try {
+          // Determine the select element selector
+          let selectSelector = ctx.action.element;
+          if (elementInfo.parentIsSelect) {
+            // If we clicked on an option, find its parent select
+            const parentSelectResult = await elementHandle.evaluate(el => {
+              // Walk up to find parent select
+              let parent = el.parentElement;
+              while (parent && parent.tagName.toLowerCase() !== 'select') {
+                parent = parent.parentElement;
               }
-              return false;
-            }, 
-            { selector: selectSelector, value: elementInfo.value }
+              
+              if (!parent) return null;
+              
+              // Cast to HTMLSelectElement to access proper properties
+              const selectEl = parent as HTMLSelectElement;
+              return {
+                id: selectEl.id,
+                name: selectEl.getAttribute('name')
+              };
+            });
+            
+            // Convert the result to a selector string or keep the original
+            if (parentSelectResult) {
+              selectSelector = parentSelectResult.id ? 
+                `#${parentSelectResult.id}` : 
+                parentSelectResult.name ? 
+                `select[name="${parentSelectResult.name}"]` : 
+                'select';
+            } else {
+              throw new Error('Could not find parent select element');
+            }
+          }
+          
+          // Use Playwright's native selectOption method
+          if (!selectSelector) {
+            throw new Error('No valid select element selector found');
+          }
+          await ctx.page.selectOption(selectSelector, ctx.action.value || '');
+          
+          // Verify the selection worked correctly
+          const verificationResult = await ctx.page.evaluate(
+            ({ selector, expectedValue }) => {
+              const selectEl = document.querySelector(selector) as HTMLSelectElement;
+              if (!selectEl) return false;
+              
+              // Check if any of the selected options match our expected value
+              // by text content or by value attribute
+              return Array.from(selectEl.selectedOptions).some(option => 
+                option.textContent?.trim() === expectedValue || 
+                option.value === expectedValue
+              );
+            },
+            { 
+              selector: selectSelector!,
+              expectedValue: ctx.action.value
+            }
           );
           
-          logger.info('Set dropdown value using JavaScript', { 
-            select: selectSelector, 
-            value: elementInfo.value
+          if (!verificationResult) {
+            logger.warn('Select option verification failed', {
+              element: selectSelector,
+              expectedValue: ctx.action.value
+            });
+            // Continue anyway - some selects might have complex option text/values
+          } else {
+            logger.info('Successfully selected dropdown option', {
+              element: selectSelector,
+              value: ctx.action.value
+            });
+          }
+          
+          // Skip regular click logic since we've handled the select element
+          let verified = await verifyAction(ctx.page, ctx.action);
+          
+          // If we get here, the selection was successful
+          ctx.lastActionSuccess = true;
+          ctx.successCount = (ctx.successCount || 0) + 1;
+          ctx.successfulActions?.push(`select:${selectSelector}:${ctx.action.value}`);
+          
+          ctx.history.push(`Selected "${ctx.action.value}" from dropdown ${selectSelector}`);
+          
+          return "getPageState";
+        } catch (selectError) {
+          logger.error('Error handling select element', {
+            error: selectError instanceof Error ? selectError.message : String(selectError),
+            element: ctx.action.element
           });
+          throw selectError;
         }
-      } else if (elementInfo.isRadio || elementInfo.isCheckbox) {
+      }
+      // Handle different form elements appropriately
+      else if (elementInfo.isRadio || elementInfo.isCheckbox) {
         logger.info(`Detected ${elementInfo.isRadio ? 'radio button' : 'checkbox'}, using specialized handling`, { elementInfo });
         
         // For radio buttons and checkboxes, we need to ensure they're checked

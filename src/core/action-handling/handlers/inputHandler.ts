@@ -45,12 +45,10 @@ export async function inputHandler(ctx: GraphContext): Promise<string> {
       return {
         tagName,
         type: tagName === 'input' ? (el as HTMLInputElement).type : undefined,
-        isSelect: tagName === 'select',
         isInput: tagName === 'input',
         isTextarea: tagName === 'textarea',
         value: tagName === 'input' ? (el as HTMLInputElement).value : 
                tagName === 'textarea' ? (el as HTMLTextAreaElement).value :
-               tagName === 'select' ? (el as HTMLSelectElement).value :
                el.getAttribute('value') || el.textContent?.trim() || '',
         id: el.id,
         name: el.getAttribute('name')
@@ -73,13 +71,7 @@ export async function inputHandler(ctx: GraphContext): Promise<string> {
     
     // Add verification after input/selection to confirm values were accepted
     const verifyValue = await elementHandle.evaluate((el: HTMLElement, value: string) => {
-      if (el.tagName.toLowerCase() === 'select') {
-        // For select elements, check selected value or text
-        const selectEl = el as HTMLSelectElement;
-        return Array.from(selectEl.selectedOptions).some(o => 
-          o.value === value || o.text === value || o.textContent === value
-        );
-      } else if (el.hasAttribute('contenteditable')) {
+      if (el.hasAttribute('contenteditable')) {
         // For contentEditable elements
         return el.textContent === value;
       } else {
