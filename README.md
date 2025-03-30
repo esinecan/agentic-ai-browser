@@ -1,6 +1,10 @@
 # Agentic AI Browser
 
 An automated browser agent powered by LLMs for web automation tasks.
+<video width="320" height="240" controls>
+  <source src="demo%20browser.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
 
 ## Overview
 This project is a **AI-driven web automation agent** that uses **Playwright** for browser interactions and **LLM integration** for intelligent decision-making. It's designed for **reliable, adaptable web automation** with robust element detection and contextual understanding. It's single agent by design, and it doesn't require highly specialized models. Quite the opposite. It is built with getting solid benefit out of smaller models in mind. It can visit every single item in the first 5 search result pages, record its findings in a text file and notify you. You just talk to it in a natural speaking language.
