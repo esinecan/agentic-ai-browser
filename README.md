@@ -97,6 +97,10 @@ npm start
 
 ## Technical Architecture
 
+<a href="Browser%20Automator%20Mind%20Map.png">
+  <img src="Browser%20Automator%20Mind%20Map.png" alt="Browser Automator Mind Map" style="width: 600px;"/>
+</a>
+
 ### 1. DOM Extraction & Analysis System
 The project features a sophisticated DOM extraction system that provides structured page understanding for the AI agent:
 
