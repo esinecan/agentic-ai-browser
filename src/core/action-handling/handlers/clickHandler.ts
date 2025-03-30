@@ -4,6 +4,7 @@ import { getElement, verifyAction } from "../../../browserExecutor.js";
 import { SuccessPatterns } from "../../../successPatterns.js";
 import { SelectorFallbacks } from "../../elements/strategies/SelectorFallbacks.js";
 import { ensureElementVisible } from "../../../utils/visibilityUtils.js";
+import { highlightElement, setOverlayStatus } from "../../../utils/uiEffects.js";
 import logger from "../../../utils/logger.js";
 
 // Default value for the universal submit selector if not set in environment variables
@@ -13,6 +14,10 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
   if (!ctx.page || !ctx.action) {
     throw new Error("Invalid context");
   }
+
+  // Set overlay status immediately
+  const elementDescription = ctx.action.description || ctx.action.element || "element";
+  await setOverlayStatus(ctx.page, `Agent is clicking ${elementDescription}`);
 
   // Special case for UNIVERSAL_SUBMIT_SELECTOR - simulate pressing Enter key
   // Use the environment variable or fall back to the default value
@@ -88,6 +93,9 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
     if (!elementHandle) {
       throw new Error("Element not found " + ctx.action.element);
     }
+
+    // Highlight the element we're about to click
+    await highlightElement(elementHandle);
 
     try {
       // Check if this is a form element (option, radio, checkbox, etc.)
@@ -325,6 +333,9 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
 
     const elementSelector = ctx.action.element;
     const description = ctx.action.description || elementSelector;
+    
+    // Update overlay with success message
+    await setOverlayStatus(ctx.page, `✅ Successfully clicked ${description}!`);
 
     logger.info('Click successful', {
       element: description,
@@ -347,6 +358,11 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
 
     return "getPageState";
   } catch (error) {
+    // Update overlay with error message
+    if (ctx.page) {
+      await setOverlayStatus(ctx.page, `❌ Click failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+    
     logger.browser.error('click', {
       error,
       element: ctx.action.element

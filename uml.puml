@@ -187,6 +187,9 @@ class ElementFinder {
     +findElement(page: Page, action: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }): Promise<ElementHandle<Node> | null>
     +getAlternativeSuggestions(page: Page, selector: string): Promise<string[]>
 }
++highlightElement(elementHandle: ElementHandle<Node> | null): Promise<void>
++setOverlayStatus(page: Page, statusText: string): Promise<void>
++clearHighlights(page: Page): Promise<void>
 +testExtractors(page: Page): Promise<void>
 +generatePageSummary(page: Page, domSnapshot: any): Promise<string>
 +getChromeProcess(): ChildProcess | null

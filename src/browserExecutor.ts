@@ -162,6 +162,12 @@ async function waitForChromeDevTools(timeoutMs = 30000): Promise<void> {
   throw new Error(`Chrome DevTools not available after ${timeoutMs}ms`);
 }
 
+// Import the new ElementFinder
+import { elementFinder } from "./core/elements/finder.js";
+
+// Import the setOverlayStatus function
+import { setOverlayStatus } from './utils/uiEffects.js';
+
 // Create a new page and navigate to the starting URL.
 export async function createPage(browser: Browser): Promise<Page> {
   logger.browser.action('createPage', {
@@ -170,7 +176,23 @@ export async function createPage(browser: Browser): Promise<Page> {
 
   try {
     const page = await browser.newPage();
+    
+    // Set up navigation listener to re-add overlay on page changes
+    page.on('load', async () => {
+      try {
+        // Small delay to ensure DOM is ready
+        setTimeout(async () => {
+          await setOverlayStatus(page, "Agent is observing page...");
+        }, 500);
+      } catch (err) {
+        // Ignore errors here
+      }
+    });
+    
     await page.goto(process.env.START_URL || "https://en.wikipedia.org/wiki/Main_Page");
+    
+    // Initialize the overlay after the first page load
+    await setOverlayStatus(page, "Agent is initialized and ready");
     
     logger.info('Page created and navigated to start URL', {
       url: await page.url(),
@@ -266,9 +288,6 @@ export async function verifyElementExists(
     return { exists: false, count: 0, suggestion: null };
   }
 }
-
-// Import the new ElementFinder
-import { elementFinder } from "./core/elements/finder.js";
 
 // Helper: Get an element based on the action's selector with improved error handling
 export async function getElement(

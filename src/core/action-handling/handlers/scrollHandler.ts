@@ -1,4 +1,5 @@
 import { GraphContext } from "../../../browserExecutor.js";
+import { setOverlayStatus } from "../../../utils/uiEffects.js";
 import logger from "../../../utils/logger.js";
 
 // Default scroll amount in pixels
@@ -9,6 +10,10 @@ export async function scrollHandler(ctx: GraphContext): Promise<string> {
 
   // Get direction, defaulting to "down" if not specified
   const direction = ctx.action.direction || "down";
+  
+  // Set overlay status
+  await setOverlayStatus(ctx.page, `Agent is scrolling ${direction}`);
+  
   // Amount to scroll (positive for down, negative for up)
   const scrollAmount = direction === "down" ? DEFAULT_SCROLL_AMOUNT : -DEFAULT_SCROLL_AMOUNT;
 
@@ -39,6 +44,9 @@ export async function scrollHandler(ctx: GraphContext): Promise<string> {
     }, scrollAmount);
     
     if (!canScroll) {
+      // Update overlay with the limit message
+      await setOverlayStatus(ctx.page, `⚠️ Can't scroll ${direction} anymore - already at the ${direction === "down" ? "bottom" : "top"} of the page.`);
+      
       ctx.lastActionSuccess = true; // Not really a failure
       ctx.actionFeedback = `⚠️ Can't scroll ${direction} anymore - already at the ${direction === "down" ? "bottom" : "top"} of the page.`;
       ctx.history.push(`Attempted to scroll ${direction} but reached the ${direction === "down" ? "bottom" : "top"} of the page`);
@@ -70,6 +78,9 @@ export async function scrollHandler(ctx: GraphContext): Promise<string> {
     ctx.successCount = (ctx.successCount || 0) + 1;
     ctx.successfulActions?.push(`scroll:${direction}`);
     
+    // Update overlay with success message
+    await setOverlayStatus(ctx.page, `✅ Successfully scrolled ${direction} by ${actualScroll} pixels.`);
+    
     ctx.actionFeedback = `✅ Successfully scrolled ${direction} by ${actualScroll} pixels.` +
       (ctx.successCount > 1 ? ` You've had ${ctx.successCount} successful actions in a row.` : '');
     
@@ -85,6 +96,11 @@ export async function scrollHandler(ctx: GraphContext): Promise<string> {
     // Return to page state to extract new content after scrolling
     return "getPageState";
   } catch (error) {
+    // Update overlay with error message
+    if (ctx.page) {
+      await setOverlayStatus(ctx.page, `❌ Scroll failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+    
     logger.browser.error("scroll", {
       error,
       direction

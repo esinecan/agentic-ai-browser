@@ -3,10 +3,18 @@ import { getElement, verifyAction } from "../../../browserExecutor.js";
 import { SelectorFallbacks } from "../../elements/strategies/SelectorFallbacks.js";
 import { SuccessPatterns } from "../../../successPatterns.js";
 import { ensureElementVisible } from "../../../utils/visibilityUtils.js";
+import { highlightElement, setOverlayStatus } from "../../../utils/uiEffects.js";
 import logger from "../../../utils/logger.js";
 
 export async function inputHandler(ctx: GraphContext): Promise<string> {
   if (!ctx.page || !ctx.action) throw new Error("Invalid context");
+
+  // Show status in overlay
+  const inputValue = ctx.action.value && ctx.action.value.length > 20 
+    ? ctx.action.value.substring(0, 20) + '...' 
+    : ctx.action.value || '';
+  const elementDescription = ctx.action.description || ctx.action.element || "field";
+  await setOverlayStatus(ctx.page, `Agent is typing "${inputValue}" into ${elementDescription}`);
 
   logger.browser.action('input', {
     element: ctx.action.element,
@@ -35,6 +43,9 @@ export async function inputHandler(ctx: GraphContext): Promise<string> {
     
     // If still no element found, throw error
     if (!elementHandle) throw new Error("Element not found");
+
+    // Highlight the element we're about to interact with
+    await highlightElement(elementHandle);
     
     // Ensure element is visible before interacting with it
     await ensureElementVisible(ctx.page, elementHandle);
@@ -99,6 +110,9 @@ export async function inputHandler(ctx: GraphContext): Promise<string> {
     const value = ctx.action.value;
     const description = ctx.action.description || elementSelector;
     
+    // Update overlay with success message
+    await setOverlayStatus(ctx.page, `✅ Successfully entered "${value}" into ${description}!`);
+    
     ctx.successfulActions?.push(`input:${elementSelector}`);
     
     ctx.actionFeedback = `✅ Successfully entered "${value}" into ${description}!` + 
@@ -123,6 +137,11 @@ export async function inputHandler(ctx: GraphContext): Promise<string> {
 
     return "chooseAction";
   } catch (error) {
+    // Update overlay with error message
+    if (ctx.page) {
+      await setOverlayStatus(ctx.page, `❌ Input failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+    
     logger.browser.error("input", {
       error,
       element: ctx.action.element,
