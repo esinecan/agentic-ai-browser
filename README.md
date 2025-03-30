@@ -20,32 +20,8 @@ This project is a **AI-driven web automation agent** that uses **Playwright** fo
 - **Session Notes** – Save and retrieve information across multiple pages during a session
 - **Custom Automation Functions** – User-defined functions for common research and investigation tasks
 - **Robust Browser Management** – Improved Chrome process handling with DevTools polling and cleanup
-
-## Visual Feedback & Transparency
-
-The agent now provides real-time visual feedback during automation:
-
-### Element Highlighting
-- **Red Border Highlighting** - Elements being interacted with are temporarily highlighted with a red border
-- **Automatic Timeout** - Highlights automatically fade after interaction to avoid visual clutter
-- **Error-Resistant Implementation** - Highlighting failures don't affect core functionality
-
-### Status Overlay
-- **Bottom-Left Status Display** - Non-intrusive overlay showing current agent action
-- **Action-Specific Messages** - Context-aware status messages for clicks, typing, navigation, etc.
-- **Success/Failure Indicators** - Visual confirmation when actions succeed or fail
-- **Persistent Across Navigation** - Status overlay remains visible across page changes
-- **Animation Effects** - Subtle animations make status changes noticeable without being distracting
-
-### Benefits
-- **Debugging Transparency** - Instantly see what the agent is doing and where it's focusing
-- **Improved Observability** - No more wondering what action is currently being performed
-- **User Confidence** - Clear visual indicators build trust in the agent's operation
-- **Non-Invasive Design** - UI elements don't interfere with page functionality
-- **Reduced Logging Need** - Visual feedback reduces the need to constantly check console logs
-
-These visual feedback features make the agent significantly easier to monitor, debug, and trust during operation, especially in headful mode.
-
+- **Red Border Highlighting** - Elements being interacted with are temporarily highlighted with a red border (headful mode only)
+- **Bottom-Left Status Display** - Non-intrusive overlay showing current agent action (headful mode only)
 ---
 
 ## Setup & Installation
