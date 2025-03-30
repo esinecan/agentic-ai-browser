@@ -1,6 +1,6 @@
 # Agentic AI Browser
 
-Wouldn't you want your browser to be handle complex tasks on its own? Imagine the plagiarism possibilities. Well, imagine no more! Tomorrow is already here. Click the below image to see the "browser automator agent" in action:
+Wouldn't you want your browser to be handle complex tasks on its own? Imagine the plagiarism possibilities. Well, imagine no more! Tomorrow is already here. Click the video below to see the "browser automator agent" in action:
 
 [![Demo Video](https://i.ytimg.com/vi/NcPC3spq0vg/hqdefault.jpg)](https://youtu.be/NcPC3spq0vg)
 
