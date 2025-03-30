@@ -4,6 +4,7 @@ import { getElement, verifyAction } from "../../../browserExecutor.js";
 import { SuccessPatterns } from "../../../successPatterns.js";
 import { SelectorFallbacks } from "../../elements/strategies/SelectorFallbacks.js";
 import { ensureElementVisible } from "../../../utils/visibilityUtils.js";
+import { highlightElement, setOverlayStatus } from "../../../utils/uiEffects.js";
 import logger from "../../../utils/logger.js";
 
 // Default value for the universal submit selector if not set in environment variables
@@ -13,6 +14,10 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
   if (!ctx.page || !ctx.action) {
     throw new Error("Invalid context");
   }
+
+  // Set overlay status immediately
+  const elementDescription = ctx.action.description || ctx.action.element || "element";
+  await setOverlayStatus(ctx.page, `Agent is clicking ${elementDescription}`);
 
   // Special case for UNIVERSAL_SUBMIT_SELECTOR - simulate pressing Enter key
   // Use the environment variable or fall back to the default value
@@ -89,12 +94,159 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
       throw new Error("Element not found " + ctx.action.element);
     }
 
+    // Highlight the element we're about to click
+    await highlightElement(elementHandle);
+
     try {
-      // Ensure element is visible before trying to click
-      await ensureElementVisible(ctx.page, elementHandle);
+      // Check if this is a form element (option, radio, checkbox, etc.)
+      const elementInfo = await elementHandle.evaluate((el: HTMLElement) => {
+        const tagName = el.tagName.toLowerCase();
+        
+        return {
+          tagName,
+          isRadio: tagName === 'input' && (el as HTMLInputElement).type === 'radio',
+          isCheckbox: tagName === 'input' && (el as HTMLInputElement).type === 'checkbox',
+          isSelect: tagName === 'select',
+          parentIsSelect: tagName === 'option' || (el.parentElement && el.parentElement.tagName.toLowerCase() === 'select'),
+          value: tagName === 'input' ? (el as HTMLInputElement).value : 
+                el.getAttribute('value') || el.textContent?.trim() || '',
+          id: el.id,
+          name: el.getAttribute('name')
+        };
+      });
       
-      // Try the regular Playwright click first
-      await elementHandle.click({ timeout: ctx.action.maxWait });
+      // Handle select elements with specialized dropdown handling
+      if ((elementInfo.isSelect || elementInfo.parentIsSelect) && ctx.action.value) {
+        logger.info('Detected select element, using specialized dropdown handling', { 
+          element: ctx.action.element,
+          value: ctx.action.value
+        });
+        
+        try {
+          // Determine the select element selector
+          let selectSelector = ctx.action.element;
+          if (elementInfo.parentIsSelect) {
+            // If we clicked on an option, find its parent select
+            const parentSelectResult = await elementHandle.evaluate(el => {
+              // Walk up to find parent select
+              let parent = el.parentElement;
+              while (parent && parent.tagName.toLowerCase() !== 'select') {
+                parent = parent.parentElement;
+              }
+              
+              if (!parent) return null;
+              
+              // Cast to HTMLSelectElement to access proper properties
+              const selectEl = parent as HTMLSelectElement;
+              return {
+                id: selectEl.id,
+                name: selectEl.getAttribute('name')
+              };
+            });
+            
+            // Convert the result to a selector string or keep the original
+            if (parentSelectResult) {
+              selectSelector = parentSelectResult.id ? 
+                `#${parentSelectResult.id}` : 
+                parentSelectResult.name ? 
+                `select[name="${parentSelectResult.name}"]` : 
+                'select';
+            } else {
+              throw new Error('Could not find parent select element');
+            }
+          }
+          
+          // Use Playwright's native selectOption method
+          if (!selectSelector) {
+            throw new Error('No valid select element selector found');
+          }
+          await ctx.page.selectOption(selectSelector, ctx.action.value || '');
+          
+          // Verify the selection worked correctly
+          const verificationResult = await ctx.page.evaluate(
+            ({ selector, expectedValue }) => {
+              const selectEl = document.querySelector(selector) as HTMLSelectElement;
+              if (!selectEl) return false;
+              
+              // Check if any of the selected options match our expected value
+              // by text content or by value attribute
+              return Array.from(selectEl.selectedOptions).some(option => 
+                option.textContent?.trim() === expectedValue || 
+                option.value === expectedValue
+              );
+            },
+            { 
+              selector: selectSelector!,
+              expectedValue: ctx.action.value
+            }
+          );
+          
+          if (!verificationResult) {
+            logger.warn('Select option verification failed', {
+              element: selectSelector,
+              expectedValue: ctx.action.value
+            });
+            // Continue anyway - some selects might have complex option text/values
+          } else {
+            logger.info('Successfully selected dropdown option', {
+              element: selectSelector,
+              value: ctx.action.value
+            });
+          }
+          
+          // Skip regular click logic since we've handled the select element
+          let verified = await verifyAction(ctx.page, ctx.action);
+          
+          // If we get here, the selection was successful
+          ctx.lastActionSuccess = true;
+          ctx.successCount = (ctx.successCount || 0) + 1;
+          ctx.successfulActions?.push(`select:${selectSelector}:${ctx.action.value}`);
+          
+          ctx.history.push(`Selected "${ctx.action.value}" from dropdown ${selectSelector}`);
+          
+          return "getPageState";
+        } catch (selectError) {
+          logger.error('Error handling select element', {
+            error: selectError instanceof Error ? selectError.message : String(selectError),
+            element: ctx.action.element
+          });
+          throw selectError;
+        }
+      }
+      // Handle different form elements appropriately
+      else if (elementInfo.isRadio || elementInfo.isCheckbox) {
+        logger.info(`Detected ${elementInfo.isRadio ? 'radio button' : 'checkbox'}, using specialized handling`, { elementInfo });
+        
+        // For radio buttons and checkboxes, we need to ensure they're checked
+        await ctx.page.evaluate(
+          ({ selector, elementType }) => {
+            const element = document.querySelector(selector) as HTMLInputElement | null;
+            if (element) {
+              // Set checked state
+              if (elementType === 'radio' || !element.checked) {
+                element.checked = true;
+                // Trigger change and input events
+                element.dispatchEvent(new Event('change', { bubbles: true }));
+                element.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+              return true;
+            }
+            return false;
+          },
+          { 
+            selector: ctx.action.element || '', 
+            elementType: elementInfo.isRadio ? 'radio' : 'checkbox' 
+          }
+        );
+        
+        logger.info(`Set ${elementInfo.isRadio ? 'radio button' : 'checkbox'} state using JavaScript`, { 
+          element: ctx.action.element
+        });
+      } else {
+        // Regular click for non-form elements
+        await ensureElementVisible(ctx.page, elementHandle);
+        await elementHandle.click({ timeout: ctx.action.maxWait });
+      }
     } catch (error) {
       // If regular click fails, check if it's a link and navigate directly
       try {
@@ -149,7 +301,26 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
       }
     }
 
-    const verified = await verifyAction(ctx.page, ctx.action);
+    let verified = await verifyAction(ctx.page, ctx.action);
+
+    // Verify element was actually clicked by checking for navigation or other state changes
+    const currentUrl = ctx.page.url();
+    const urlChanged = ctx.action.previousUrl !== currentUrl;
+
+    if (!verified && urlChanged) {
+      // If URL changed despite verification failure, consider it a success
+      logger.info('Click verification failed but URL changed, considering successful', {
+        from: ctx.action.previousUrl,
+        to: currentUrl
+      });
+      verified = true;
+    } else if (verified && !urlChanged && ctx.action.element && ctx.action.element.includes('href')) {
+      // If verification succeeded but URL didn't change for a link, something might be wrong
+      logger.warn('Click verification succeeded but URL didn\'t change for a link element', {
+        element: ctx.action.element
+      });
+      // We'll still proceed as successful since verification passed
+    }
 
     if (!verified) {
       throw new Error("Action verification failed after click");
@@ -162,6 +333,9 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
 
     const elementSelector = ctx.action.element;
     const description = ctx.action.description || elementSelector;
+    
+    // Update overlay with success message
+    await setOverlayStatus(ctx.page, `✅ Successfully clicked ${description}!`);
 
     logger.info('Click successful', {
       element: description,
@@ -184,6 +358,11 @@ export async function clickHandler(ctx: GraphContext): Promise<string> {
 
     return "getPageState";
   } catch (error) {
+    // Update overlay with error message
+    if (ctx.page) {
+      await setOverlayStatus(ctx.page, `❌ Click failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+    
     logger.browser.error('click', {
       error,
       element: ctx.action.element

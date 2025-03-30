@@ -1,10 +1,14 @@
 import { GraphContext } from "../../../browserExecutor.js";
 import { verifyAction } from "../../../browserExecutor.js";
 import { SuccessPatterns } from "../../../successPatterns.js";
+import { setOverlayStatus } from "../../../utils/uiEffects.js";
 import logger from "../../../utils/logger.js";
 
 export async function navigateHandler(ctx: GraphContext): Promise<string> {
   if (!ctx.page || !ctx.action?.value) throw new Error("Invalid context");
+
+  // Set overlay status
+  await setOverlayStatus(ctx.page, `Agent is navigating to: ${ctx.action.value}`);
 
   logger.debug('Navigation details', { 
     from: ctx.page.url(),
@@ -64,6 +68,9 @@ export async function navigateHandler(ctx: GraphContext): Promise<string> {
     ctx.successCount = (ctx.successCount || 0) + 1;
     ctx.successfulActions?.push(`navigate:${url}`);
     
+    // Update overlay with success message
+    await setOverlayStatus(ctx.page, `✅ Successfully navigated to ${url}!`);
+    
     ctx.actionFeedback = `✅ Successfully navigated to ${url}!` +
       (ctx.successCount > 1 ? ` You're on a roll with ${ctx.successCount} successful actions in a row!` : '');
     
@@ -84,6 +91,11 @@ export async function navigateHandler(ctx: GraphContext): Promise<string> {
 
     return "chooseAction";
   } catch (error) {
+    // Update overlay with error message
+    if (ctx.page) {
+      await setOverlayStatus(ctx.page, `❌ Navigation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+    
     logger.browser.error("navigation", {
       error,
       url: ctx.action.value
