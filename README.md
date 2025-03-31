@@ -2,7 +2,7 @@
 
 Wouldn't you want your browser to be handle complex tasks on its own? Imagine the plagiarism possibilities. Well, imagine no more! Tomorrow is already here. Click the video below to see the "browser automator agent" in action:
 
-[![Demo Video](https://i.ytimg.com/vi/NcPC3spq0vg/hqdefault.jpg)](https://youtu.be/NcPC3spq0vg)
+[![Demo Video](https://i.ytimg.com/vi/q85f3yhZG80/hqdefault.jpg)](https://www.youtube.com/watch?v=q85f3yhZG80)
 
 ## Overview
 This project is a **AI-driven web automation agent** that uses **Playwright** for browser interactions and **LLM integration** for intelligent decision-making. It's designed for **reliable, adaptable web automation** with robust element detection and contextual understanding. It's single agent by design, and it doesn't require highly specialized models. Quite the opposite. It is built with getting solid benefit out of smaller models in mind. It can visit every single item in the first 5 search result pages, record its findings in a text file and notify you. You just talk to it in a natural speaking language.
