@@ -46,7 +46,7 @@ protected static readonly SYSTEM_PROMPT = `
   # EXAMPLES:
   1. Navigate: { "type": "navigate", "value": "https://example.com" }
   2. Click: { "type": "click", "element": "#submit-button", "description": "Submit the form" }
-  3. Ask human: { "type": "sendHumanMessage", "question": "I've found 3 possible links. Which one should I click?" }
+  3. Ask human: { "type": "sendHumanMessage", "question": "There's a captcha on this page. Can you solve it so I can continue?" }
   4. Report back to human: { "type": "sendHumanMessage", "question": "I've gone over the links you sent and wrote a 10k word essay from them. you can check it in the notes." }
   5. Save info: { "type": "notes", "operation": "add", "note": "Product price: $19.99" }
   6. Read saved info: { "type": "notes", "operation": "read" }
