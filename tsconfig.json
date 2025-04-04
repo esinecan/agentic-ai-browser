@@ -1,15 +1,18 @@
 {
-    "compilerOptions": {
-      "target": "ES2022",
-      "module": "Node16",
-      "moduleResolution": "node16",
-      "strict": true,
-      "esModuleInterop": true,
-      "outDir": "dist",
-      "rootDir": "src",
-      "sourceMap": true,
-      "inlineSources": true
-    },
-    "include": ["src"],
-    "exclude": ["node_modules", "dist"]
-  }
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "node16",
+    "strict": true,
+    "esModuleInterop": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "sourceMap": true,
+    "inlineSources": true,
+    "typeRoots": ["./node_modules/@types", "./src/types"],
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "**/*.test.ts"]
+}

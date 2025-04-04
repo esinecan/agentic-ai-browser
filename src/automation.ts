@@ -35,6 +35,8 @@ import {
   listAvailableFunctions 
 } from './core/user-functions/functionParser.js';
 
+import { startMcpServer } from './core/mcp/server.js';
+
 // Select LLM processor based on environment variable
 let llmProcessor: LLMProcessor;
 switch(process.env.LLM_PROVIDER?.toLowerCase()) {
@@ -268,6 +270,14 @@ registerState("start", async (ctx: GraphContext) => {
   // Reset agent state
   const agentState = getAgentState();
   agentState.clearStop();
+  
+  // Start the MCP server
+  try {
+    await startMcpServer();
+    logger.info('MCP server started successfully');
+  } catch (error) {
+    logger.error('Failed to start MCP server', { error });
+  }
   
   return "setupBrowser";
 });

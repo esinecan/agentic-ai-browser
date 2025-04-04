@@ -4,6 +4,7 @@ import { getAgentState } from '../../utils/agentState.js';
 import { ContextManager } from './context.js';
 import { checkMilestones } from './milestones.js';
 import { detectProgress } from './progress.js';
+import { setMcpContext } from '../mcp/server.js';
 
 // Type definition for state handlers
 export type StateHandler = (ctx: GraphContext) => Promise<string>;
@@ -26,6 +27,9 @@ export async function runStateMachine(ctx: GraphContext): Promise<void> {
       headless: process.env.HEADLESS !== "false"
     }
   });
+
+  // Share the context with the MCP server
+  setMcpContext(ctx);
 
   // Initialize the context with default values if needed
   const contextManager = new ContextManager();

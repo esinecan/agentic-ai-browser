@@ -264,6 +264,24 @@ interface PageState {
 +calculateProgressPercentage(ctx: GraphContext): number
 +isStuck(ctx: GraphContext): boolean
 +getProgressSummary(ctx: GraphContext): string
+interface ToolCallRequest {
+    +method: string
+    +params: { name: string; arguments: Record<string, any>; }
+}
+interface ToolResponse {
+    +content: { type: string; text: string; }[]
+    +isError?: boolean | undefined
+}
++getMcpContext(): GraphContext | null
++setMcpContext(ctx: GraphContext | null): void
++startMcpServer(): Promise<void>
++registerTools(server: Server): void
++handleClickAction(args: { element: string; description?: string | undefined; }): Promise<{ content: { type: string; text: string; }[]; }>
++handleInputAction(args: { element: string; value: string; }): Promise<{ content: { type: string; text: string; }[]; }>
++handleNavigateAction(args: { value: string; }): Promise<{ content: { type: string; text: string; }[]; }>
++handleNotesAction(args: { operation: "add" | "read"; note?: string | undefined; }): Promise<{ content: { type: string; text: string; }[]; }>
++handleScrollAction(args: { direction: "up" | "down"; }): Promise<{ content: { type: string; text: string; }[]; }>
++handleGetPageInfoAction(): Promise<{ content: { type: string; text: string; }[]; }>
 +runStateMachine(ctx: GraphContext): Promise<void>
 +isRedundantAction(currentAction: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }, history: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }[]): boolean
 +generateActionFeedback(ctx: GraphContext): string
@@ -391,7 +409,6 @@ interface UserFunction {
 +isListFunctionsRequest(input: string): boolean
 +listAvailableFunctions(): Promise<string>
 +promptUser(question: string): Promise<string>
-+sexyPrint(text: string, delay?: number): Promise<void>
 +processUserFunctionCall(ctx: GraphContext, functionCall: string): Promise<string>
 +sendHumanMessageHandler(ctx: GraphContext): Promise<string>
 +createSendHumanMessageAction(question: string): { type: "sendHumanMessage"; question: string; selectorType: "css" | "text" | "xpath"; maxWait: number; }

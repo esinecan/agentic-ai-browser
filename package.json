@@ -12,7 +12,8 @@
         "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
         "test:automation": "node --experimental-vm-modules node_modules/jest/bin/jest.js src/__tests__/automation/",
         "test:safe": "node --experimental-vm-modules node_modules/jest/bin/jest.js src/__tests__/automation/progress.test.ts src/__tests__/automation/milestones.test.ts src/__tests__/automation/machine.test.ts src/__tests__/core/actions/actionExtractor.test.ts src/__tests__/core/browserExecutor.test.ts",
-        "test:working": "node --experimental-vm-modules node_modules/jest/bin/jest.js src/__tests__/automation/ src/__tests__/core/elements/"
+        "test:working": "node --experimental-vm-modules node_modules/jest/bin/jest.js src/__tests__/automation/ src/__tests__/core/elements/",
+        "postinstall": "npm install @modelcontextprotocol/sdk"
     },
     "dependencies": {
         "@google/generative-ai": "^0.22.0",
@@ -25,7 +26,8 @@
         "langchain": "^0.1.4",
         "node-fetch": "^2.7.0",
         "playwright": "^1.42.0",
-        "zod": "^3.21.4"
+        "zod": "^3.21.4",
+        "@modelcontextprotocol/sdk": "^1.7.0"
     },
     "devDependencies": {
         "@jest/globals": "^29.6.4",
