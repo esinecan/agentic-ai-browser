@@ -50,17 +50,33 @@ switch(process.env.LLM_PROVIDER?.toLowerCase()) {
     llmProcessor = ollamaProcessor;
 }
 
-// Create readline interface for user input
+// Create readline interface for user input with multi-line support
 function promptUser(question: string): Promise<string> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
   });
-
+  
+  console.log(question);
+  console.log("\n(Enter multi-line text. Type '.done' on a new line to finish or press Ctrl+D)\n");
+  
+  let userInput = '';
+  
   return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer);
+    rl.on('line', (line) => {
+      // Check for termination signal
+      if (line.trim() === '.done') {
+        rl.close();
+        resolve(userInput);
+      } else {
+        // Add the line to our input buffer with a newline
+        userInput += line + '\n';
+      }
+    });
+    
+    // Also handle Ctrl+D (SIGINT) for termination
+    rl.on('close', () => {
+      resolve(userInput.trim());
     });
   });
 }

@@ -1,5 +1,6 @@
-import { Server } from '@modelcontextprotocol/sdk';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import logger from '../../utils/logger.js';
 import { GraphContext } from '../../browserExecutor.js';
 import { states } from '../automation/machine.js';
@@ -68,9 +69,7 @@ export async function startMcpServer(): Promise<void> {
  */
 function registerTools(server: Server): void {
   // List available tools
-  server.setRequestHandler({
-    method: "tools/list"
-  }, async () => {
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
       tools: [
         {
@@ -168,11 +167,9 @@ function registerTools(server: Server): void {
       ]
     };
   });
-
+  
   // Handle tool execution
-  server.setRequestHandler({
-    method: "tools/call"
-  }, async (request: ToolCallRequest) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request: ToolCallRequest) => {
     if (!currentContext) {
       return {
         isError: true,
