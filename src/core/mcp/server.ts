@@ -8,11 +8,12 @@ import { getAgentState } from '../../utils/agentState.js';
 
 // Define types for MCP requests and responses
 interface ToolCallRequest {
-  method: string;
   params: {
     name: string;
-    arguments: Record<string, any>;
+    arguments?: Record<string, any>;
+    _meta?: Record<string, any>;
   };
+  method: string;
 }
 
 interface ToolResponse {
