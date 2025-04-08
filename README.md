@@ -1,10 +1,16 @@
 # Beyond Brute Force: Intelligent Design Principles in the Agentic AI Browser
 
+> An AI-driven web automation agent that achieves remarkable results through intelligent design rather than computational brute force.
+
 [![Demo Video](https://i.ytimg.com/vi/q85f3yhZG80/hqdefault.jpg)](https://www.youtube.com/watch?v=q85f3yhZG80)
 
 ## Introduction
 
 The Agentic AI Browser project represents a fundamental shift away from the "bigger is better" paradigm dominating AI development today. Rather than relying on ever-increasing model sizes and computational resources, this browser automation system embodies a set of design principles that prioritize efficiency, resilience, and practical effectiveness. By implementing thoughtful architectural choices instead of brute-force approaches, it demonstrates how smaller models can achieve remarkable results through better system design.
+
+## Quick Start & Documentation
+
+Ready to try the Agentic AI Browser? See the [User Manual](USER-MANUAL.md) for complete setup instructions, configuration options, and detailed documentation.
 
 ## 1. Behavioral Caching: Success Patterns Over Repeated Computation
 
