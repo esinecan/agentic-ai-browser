@@ -12,6 +12,76 @@ The Agentic AI Browser project represents a fundamental shift away from the "big
 
 Ready to try the Agentic AI Browser? See the [User Manual](USER-MANUAL.md) for complete setup instructions, configuration options, and detailed documentation.
 
+## MCP (Model Context Protocol) Support
+
+The Agentic Browser now supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) - an open standard for AI tool integration. This allows other AI applications and agents to control the browser remotely.
+
+### Using the MCP Server
+
+The browser automatically starts an HTTP-based MCP server on port 3000 (configurable) when launched. You can interact with it using any HTTP client that supports JSON-RPC 2.0.
+
+#### Configuration
+
+Add these options to your .env file:
+
+```properties
+# MCP HTTP Server Configuration
+MCP_PORT=3000  # Default port is 3000 if not specified
+```
+
+#### Available MCP Tools
+
+The browser exposes these tools via MCP:
+
+- **click**: Click an element on the page
+- **input**: Enter text into an input field
+- **navigate**: Navigate to a URL
+- **notes**: Add or read session notes
+- **scroll**: Scroll the page up or down
+- **getPageInfo**: Get information about the current page
+- **setGoal**: Set the automation goal
+
+#### Testing the MCP Server
+
+Run the included test script to verify MCP functionality:
+
+```bash
+# On Windows:
+.\run_mcp_test.bat
+
+# On Unix-based systems:
+chmod +x test_mcp_http.sh
+./test_mcp_http.sh
+```
+
+#### Using with MCP Clients
+
+You can connect any MCP-compatible client to your browser. For example:
+
+```javascript
+// JavaScript example with fetch
+async function callBrowserTool(toolName, args) {
+  const response = await fetch('http://localhost:3000/mcp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: toolName,
+        arguments: args
+      }
+    })
+  });
+  
+  return await response.json();
+}
+
+// Example: Navigate to a website
+await callBrowserTool('navigate', { value: 'https://example.com' });
+```
+
 ## 1. Behavioral Caching: Success Patterns Over Repeated Computation
 
 **Core Concept**: Instead of repeatedly solving the same problems through full-scale inference, LLMs can benefit from storing and reusing successful output sequences.
