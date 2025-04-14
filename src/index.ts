@@ -5,8 +5,12 @@ import { Page } from "playwright";
 import readline from 'readline';
 import logger from './utils/logger.js';
 import { getAgentState } from './utils/agentState.js';
+import { startMcpHttpServer } from './core/mcp/http-server.js';
 
 dotenv.config();
+
+// MCP HTTP server port (default: 3000)
+const MCP_PORT = process.env.MCP_PORT ? parseInt(process.env.MCP_PORT, 10) : 3000;
 
 // Setup keyboard event handler for stopping the agent with Ctrl+C
 process.on('SIGINT', async () => {
@@ -66,6 +70,19 @@ if (process.stdin.isTTY) {
 (async () => {
   try {
     console.log("Agent started. Press Ctrl+C to stop gracefully.");
+    
+    // Start the MCP HTTP server
+    try {
+      await startMcpHttpServer(MCP_PORT);
+      logger.info(`MCP server started on http://localhost:${MCP_PORT}/mcp`);
+      console.log(`✅ MCP server available at http://localhost:${MCP_PORT}/mcp`);
+    } catch (error) {
+      logger.error('Failed to start MCP HTTP server', { error });
+      console.error('MCP server failed to start:', error instanceof Error ? error.message : String(error));
+      // Continue with normal CLI operation even if the MCP server fails
+    }
+    
+    // Run the normal CLI agent
     await runGraph();
   } catch (error) {
     console.error("Fatal error:", error);

@@ -210,6 +210,7 @@ interface GraphContext {
     +previousPageState?: any
     +milestones?: string[] | undefined
     +recognizedMilestones?: string[] | undefined
+    +notes?: string | undefined
     +pageContent?: string | undefined
     +pageSummary?: string | undefined
     +lastSelector?: string | undefined
@@ -264,9 +265,18 @@ interface PageState {
 +calculateProgressPercentage(ctx: GraphContext): number
 +isStuck(ctx: GraphContext): boolean
 +getProgressSummary(ctx: GraphContext): string
++getSessionNotesFile(): string | null
++notesHandler(ctx: GraphContext): Promise<string>
++handleClickAction(args: { element: string; description?: string | undefined; }): Promise<{ content: { type: string; text: string; }[]; isError?: undefined; } | { isError: boolean; content: { type: string; text: string; }[]; }>
++handleInputAction(args: { element: string; value: string; }): Promise<{ content: { type: string; text: string; }[]; isError?: undefined; } | { isError: boolean; content: { type: string; text: string; }[]; }>
++handleNavigateAction(args: { value: string; }): Promise<{ content: { type: string; text: string; }[]; isError?: undefined; } | { isError: boolean; content: { type: string; text: string; }[]; }>
++handleNotesAction(args: { operation: "add" | "read"; note?: string | undefined; }): Promise<{ content: { type: string; text: string; }[]; isError?: undefined; } | { isError: boolean; content: { type: string; text: string; }[]; }>
++handleScrollAction(args: { direction: "up" | "down"; }): Promise<{ content: { type: string; text: string; }[]; isError?: undefined; } | { isError: boolean; content: { type: string; text: string; }[]; }>
++handleGetPageInfoAction(): Promise<{ content: { type: string; text: string; }[]; isError?: undefined; } | { isError: boolean; content: { type: string; text: string; }[]; }>
++handleSetGoalAction(args: { goal: string; }): Promise<{ content: { type: string; text: string; }[]; isError?: undefined; } | { isError: boolean; content: { type: string; text: string; }[]; }>
 interface ToolCallRequest {
+    +params: { name: string; arguments?: Record<string, any> | undefined; _meta?: Record<string, any> | undefined; }
     +method: string
-    +params: { name: string; arguments: Record<string, any>; }
 }
 interface ToolResponse {
     +content: { type: string; text: string; }[]
@@ -275,13 +285,7 @@ interface ToolResponse {
 +getMcpContext(): GraphContext | null
 +setMcpContext(ctx: GraphContext | null): void
 +startMcpServer(): Promise<void>
-+registerTools(server: Server): void
-+handleClickAction(args: { element: string; description?: string | undefined; }): Promise<{ content: { type: string; text: string; }[]; }>
-+handleInputAction(args: { element: string; value: string; }): Promise<{ content: { type: string; text: string; }[]; }>
-+handleNavigateAction(args: { value: string; }): Promise<{ content: { type: string; text: string; }[]; }>
-+handleNotesAction(args: { operation: "add" | "read"; note?: string | undefined; }): Promise<{ content: { type: string; text: string; }[]; }>
-+handleScrollAction(args: { direction: "up" | "down"; }): Promise<{ content: { type: string; text: string; }[]; }>
-+handleGetPageInfoAction(): Promise<{ content: { type: string; text: string; }[]; }>
++registerTools(server: Server<{ method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; } | undefined; } | undefined; }, { method: string; params?: { [x: string]: unknown; _meta?: { ...; } | undefined; } | undefined; }, { ...; }>): void
 +runStateMachine(ctx: GraphContext): Promise<void>
 +isRedundantAction(currentAction: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }, history: { type: "click" | "input" | "navigate" | "wait" | "sendHumanMessage" | "notes" | "scroll"; selectorType: "css" | "xpath" | "text"; maxWait: number; value?: string | undefined; element?: string | undefined; ... 5 more ...; direction?: "up" | ... 1 more ... | undefined; }[]): boolean
 +generateActionFeedback(ctx: GraphContext): string
@@ -394,7 +398,6 @@ class SelectorFallbacks {
 +handleFailureHandler(ctx: GraphContext): Promise<string>
 +terminateHandler(ctx: GraphContext): Promise<string>
 +getPageStateHandler(ctx: GraphContext): Promise<string>
-+notesHandler(ctx: GraphContext): Promise<string>
 +scrollHandler(ctx: GraphContext): Promise<string>
 interface UserFunction {
     +name: string
@@ -414,6 +417,7 @@ interface UserFunction {
 +createSendHumanMessageAction(question: string): { type: "sendHumanMessage"; question: string; selectorType: "css" | "text" | "xpath"; maxWait: number; }
 +runGraph(): Promise<void>
 +stopAgent(): Promise<void>
++startMcpHttpServer(port?: number): Promise<void>
 +safeEvaluateWithVisibility(page: Page, fn: string | Function, fallback: T): Promise<T>
 +buildSelectorScript(): string
 +mergeContexts(initial: Partial<AgentContext>, saved: any): AgentContext

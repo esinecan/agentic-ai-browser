@@ -53,13 +53,14 @@ export interface GraphContext {
   lastScreenshot?: string;
   userGoal?: string;  
   
-  // Success tracking fields
+  // Tracking fields
   successfulActions?: string[];  // Track successful actions
   lastActionSuccess?: boolean;   // Was the last action successful?
   successCount?: number;         // Count of consecutive successes
   previousPageState?: any;       // Store previous page state for comparison
   milestones?: string[];         // Milestones based on goal
   recognizedMilestones?: string[]; // Milestones achieved
+  notes?: string;                // Notes to be added to the notepad
   
   // Page content fields
   pageContent?: string;         // Structured content from page
@@ -110,7 +111,7 @@ export async function launchBrowser(): Promise<Browser> {
         '--start-maximized',
         process.env.HEADLESS !== "false" ? '--headless=new' : ''
       ].filter(Boolean),
-      { detached: true, stdio: 'ignore' }  // Use detached: true for better persistence
+      { stdio: 'ignore' }
     );
     
     // Wait for Chrome to start properly by polling the DevTools endpoint

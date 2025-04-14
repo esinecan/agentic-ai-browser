@@ -33,5 +33,15 @@
     "name": "compareOpinions",
     "args": ["subject"],
     "prompt": "Search '${subject} pros and cons' or '${subject} criticism'. Visit Reddit, HackerNews, StackOverflow, Medium, etc. Take notes on both praise and critique. Cluster views into patterns. Be balanced. When the picture is clear, sendHumanMessage."
-  }
+  },
+  {
+    "name": "deepResearch",
+    "args": ["question"],
+    "prompt": "You are a high-level investigative research agent. Your job is to understand and investigate complex questions.\n\nGiven the following question:\n→ ${question}\n\nProceed step by step:\n\n1. Think deeply about what this question is really asking. Identify any sub-questions or unknowns that must be clarified first.\n2. Write a research plan in your notes. It should include:\n   - What needs to be found out\n   - In what order\n   - Whether any date constraints (e.g. spring/summer 2024) should be applied\n   - What kind of sources to prioritize\n\n📝 Do not begin searching until you’ve written this plan into your notes.\n\n3. Once your plan is written, begin your investigation:\n   - For each sub-question:\n     - Come up with the best Google search query\n     - If a specific time range is relevant, build a date-filtered Google search URL\n     - Visit the first 2 pages of search results\n     - For each result, read the content and, if it contains relevant information, take notes\n\n4. After gathering all the necessary information, go back to the original question.\n5. Read through all your notes.\n6. Then write a final summary explaining your findings. Be clear, honest, and specific. Say what is known, what is uncertain, and what sources support what claims.\n\nThink freely and curiously. Be structured but not rigid. If a side-path seems important, pursue it. Trust your investigative instincts."
+  },
+  {
+    "name": "searchAndSummarize",
+    "args": ["query"],
+    "prompt": "You are a research assistant. Your task is to search for information on the web and summarize it.\n\nGiven the following query:\n→ ${query}\n\n1. Start by searching for the query on Google.\n2. Visit the first 3 results (1 per turn). For each result, read the content and take notes.\n3. After gathering information from all 3 results, write a summary of your findings in your notes.\n4. Make sure to include key points, important details, and any relevant context.\n5. Once you have completed the summary, sendHumanMessage to discuss your findings."
+  }  
 ]

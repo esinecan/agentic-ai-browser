@@ -5,8 +5,8 @@ import logger from '../../utils/logger.js';
 dotenv.config();
 
 // Base URL configuration with environment variable fallback
-const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://host.docker.internal:11434';
-const MODEL = process.env.LLM_MODEL || "phi4-mini";
+const OLLAMA_HOST = process.env.OLLAMA_HOST;
+const MODEL = process.env.LLM_MODEL;
 
 // System prompt is now defined in BaseLLMProcessor
 

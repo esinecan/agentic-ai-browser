@@ -12,7 +12,6 @@ import logger from './utils/logger.js';
 
 // Import new modular components
 import { runStateMachine, states, registerState, isRedundantAction, generateActionFeedback, shuffleArray } from './core/automation/machine.js';
-import { ContextManager } from './core/automation/context.js';
 import { checkMilestones } from './core/automation/milestones.js';
 import { detectProgress, PageState } from './core/automation/progress.js';
 

@@ -6,6 +6,10 @@ import logger from '../../../utils/logger.js';
 // Session-specific notes file
 let sessionNotesFile: string | null = null;
 
+export function getSessionNotesFile(): string | null {
+  return sessionNotesFile;
+}
+
 export async function notesHandler(ctx: GraphContext): Promise<string> {
   if (!ctx.page || !ctx.action) throw new Error("Invalid context");
 

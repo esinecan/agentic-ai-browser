@@ -23,7 +23,7 @@ export async function runStateMachine(ctx: GraphContext): Promise<void> {
   logger.info('Starting state machine', {
     goal: ctx.userGoal,
     browserConfig: {
-      executable: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+      executable: process.env.PLAYWRIGHT_BROWSERS_PATH,
       headless: process.env.HEADLESS !== "false"
     }
   });

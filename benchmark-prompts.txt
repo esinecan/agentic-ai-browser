@@ -8,6 +8,8 @@
 
 - Open https://en.wikipedia.org/wiki/Special:Random. Read the first paragraph. If it's something historical or scientific, summarize it in two sentences. If it's about a person, tell the user what they were famous for. If it's something boring, just give them the title and say 'meh.'  
 
+- go to sikayetvar.com/turkcell and look for complaints about "pin kodu" and write down in 3 installments a summary of the complaints.
+
 - Visit https://www.flightaware.com. We'll look up flight 'AA100' from New York to London. Put it in whatever field is relevant then hit enter. Wait a li'l bit. Then check if the flight has departed or landed, say 'it's gone bro. you might as well relax' If it's still expected to depart, given I'm about an hour away from the airport, determine how panicked should I be and inform me in the appropriate tone.
 
 - Instead of searching, open https://www.ssllabs.com/ssltest/. Enter 'example.com' and run the test. If the SSL rating is A, say 'good to go.' If it's B or lower, tell the user they might want to be careful. If the site has no SSL, say 'uh-oh.'  
