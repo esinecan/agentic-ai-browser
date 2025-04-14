@@ -12,6 +12,7 @@ import {
   handleGetPageInfoAction,
   handleSetGoalAction
 } from './handlers.js';
+import { manifestData, toolSchemas } from './toolSchemas.js';
 
 /**
  * Starts an HTTP server for MCP (Model Context Protocol)
@@ -26,8 +27,26 @@ export async function startMcpHttpServer(port: number = 3000): Promise<void> {
   // Health check route - define as a separate handler function
   const healthCheckHandler: RequestHandler = (req, res) => {
     res.json({ status: 'ok' });
-  };
-  app.get('/health', healthCheckHandler);
+  };  app.get('/health', healthCheckHandler);
+  
+  // Well-known MCP manifest endpoint for discovery
+  app.get('/.well-known/mcp/manifest.json', (req, res) => {
+    res.json(manifestData);
+  });
+  
+  // Redirect for AI-plugin compatibility
+  app.get('/.well-known/ai-plugin.json', (req, res) => {
+    res.redirect('/.well-known/mcp/manifest.json');
+  });
+  
+  // Root discovery endpoint
+  app.get('/', (req, res) => {
+    res.json({
+      name: "agentic-browser",
+      description: "MCP-compatible browser automation server",
+      mcp_manifest: "/.well-known/mcp/manifest.json"
+    });
+  });
   
   // Add GET handler for /mcp endpoint for discovery
   app.get('/mcp', (req, res) => {
@@ -77,123 +96,34 @@ export async function startMcpHttpServer(port: number = 3000): Promise<void> {
           }
         });
         return;
-      }
-      else if (jsonRpcRequest.method === 'tools/list') {
-        const toolsList = {
-          tools: [
-            {
-              name: "click",
-              description: "Click an element on the page",
-              inputSchema: {
-                type: "object",
-                properties: {
-                  element: {
-                    type: "string",
-                    description: "CSS selector or descriptive text of the element to click"
-                  },
-                  description: {
-                    type: "string",
-                    description: "Why you're clicking this element"
-                  }
-                },
-                required: ["element"]
-              }
-            },
-            {
-              name: "input",
-              description: "Enter text into an input field",
-              inputSchema: {
-                type: "object",
-                properties: {
-                  element: {
-                    type: "string",
-                    description: "CSS selector of the input field"
-                  },
-                  value: {
-                    type: "string",
-                    description: "Text to enter"
-                  }
-                },
-                required: ["element", "value"]
-              }
-            },
-            {
-              name: "navigate",
-              description: "Navigate to a URL",
-              inputSchema: {
-                type: "object",
-                properties: {
-                  value: {
-                    type: "string",
-                    description: "URL to navigate to"
-                  }
-                },
-                required: ["value"]
-              }
-            },
-            {
-              name: "notes",
-              description: "Add or read notes",
-              inputSchema: {
-                type: "object",
-                properties: {
-                  operation: {
-                    type: "string",
-                    enum: ["add", "read"],
-                    description: "Operation to perform on notes"
-                  },
-                  note: {
-                    type: "string",
-                    description: "Note text to add (required for add operation)"
-                  }
-                },
-                required: ["operation"]
-              }
-            },
-            {
-              name: "scroll",
-              description: "Scroll the page",
-              inputSchema: {
-                type: "object",
-                properties: {
-                  direction: {
-                    type: "string",
-                    enum: ["up", "down"],
-                    description: "Direction to scroll"
-                  }
-                },
-                required: ["direction"]
-              }
-            },
-            {
-              name: "getPageInfo",
-              description: "Get current page information",
-              inputSchema: {
-                type: "object",
-                properties: {}
-              }
-            },
-            {
-              name: "setGoal",
-              description: "Set the automation goal",
-              inputSchema: {
-                type: "object",
-                properties: {
-                  goal: {
-                    type: "string",
-                    description: "The goal for the browser automation"
-                  }
-                },
-                required: ["goal"]
-              }
+      }      else if (jsonRpcRequest.method === 'tools/describe') {
+        const { name } = jsonRpcRequest.params;
+        
+        if (!name || !toolSchemas[name]) {
+          res.json({
+            jsonrpc: '2.0',
+            id: jsonRpcRequest.id,
+            error: {
+              code: -32602,
+              message: `Tool not found: ${name}`
             }
-          ]
-        };
+          });
+          return;
+        }
         
         res.json({
           jsonrpc: '2.0',
           id: jsonRpcRequest.id,
-          result: toolsList
+          result: toolSchemas[name]
+        });
+        return;
+      }      else if (jsonRpcRequest.method === 'tools/list') {
+        res.json({
+          jsonrpc: '2.0',
+          id: jsonRpcRequest.id,
+          result: {
+            tools: Object.values(toolSchemas)
+          }
         });
         return;
       }

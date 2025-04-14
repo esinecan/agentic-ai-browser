@@ -99,4 +99,14 @@ send_mcp_request "tools/call" "{
   }
 }"
 
+# Test MCP manifest discovery
+echo "🔍 Checking MCP manifest..."
+curl -s "http://localhost:3000/.well-known/mcp/manifest.json" | jq .
+echo ""
+sleep 1
+
+# Test tool description
+echo "📖 Getting tool description for 'navigate'..."
+send_mcp_request "tools/describe" "{\"name\": \"navigate\"}"
+
 echo "✅ Test complete!"
