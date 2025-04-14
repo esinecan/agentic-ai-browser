@@ -14,11 +14,20 @@ Ready to try the Agentic AI Browser? See the [User Manual](USER-MANUAL.md) for c
 
 ## MCP (Model Context Protocol) Support
 
-The Agentic Browser now supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) - an open standard for AI tool integration. This allows other AI applications and agents to control the browser remotely.
+The Agentic Browser now fully implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) standard - an open protocol that allows AI assistants like Claude and VS Code's AI features to discover and use external tools. This means your browser automation can now be controlled by these AI assistants seamlessly!
+
+### 🆕 What's New in MCP
+
+We've added complete MCP compliance with:
+
+- **Standard Discovery Endpoints**: `/.well-known/mcp/manifest.json` for automatic tool discovery
+- **Tool Description API**: `tools/describe` method for detailed schema information
+- **Improved Tool Integration**: Full JSON schema validation for reliable operation
+- **Standardized Response Format**: Consistent content structure for AI consumption
 
 ### Using the MCP Server
 
-The browser automatically starts an HTTP-based MCP server on port 3000 (configurable) when launched. You can interact with it using any HTTP client that supports JSON-RPC 2.0.
+The browser automatically starts an HTTP-based MCP server on port 3000 (configurable) when launched. You can interact with it using any MCP-compatible client or any HTTP client that supports JSON-RPC 2.0.
 
 #### Configuration
 

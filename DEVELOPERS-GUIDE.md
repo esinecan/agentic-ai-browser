@@ -15,6 +15,7 @@ This project is a **AI-driven web automation agent** that uses **Playwright** fo
 - **Real-Time Visual Feedback** – Element highlighting and status overlay for transparency
 - **Context-Aware Interaction** – Maintains task history and adapts based on successes and failures
 - **Multi-LLM Support** – Works with both **Gemini**, **Ollama**, and **OpenAI** models for flexibility
+- **MCP Compatibility** – Full [Model Context Protocol](https://modelcontextprotocol.io/) support for modern AI tool integrations
 - **Page Content Management** – Progressive scrolling and content extraction for text-heavy pages
 - **Improved Resilience** – Enhanced retry logic with increased attempt limits
 - **Agent State Management** – Track and control agent execution state
@@ -428,3 +429,185 @@ These functions allow you to quickly run common research and information-gatheri
 
 ## License
 MIT License. Free to use and modify.
+
+## MCP (Model Context Protocol) Integration
+
+The agentic-ai-browser project implements full [Model Context Protocol](https://modelcontextprotocol.io/) support, enabling it to be used as a reliable browser automation tool for AI assistants like Claude, Claude-VSCode, and other MCP-compatible clients.
+
+### What is MCP?
+
+Model Context Protocol (MCP) is an open standard that allows AI models to interact with external tools and services through a structured JSON-RPC interface. It enables AI assistants to:
+
+1. Discover available tools (browser automation capabilities in our case)
+2. Understand tool schemas and requirements
+3. Execute tools with specific parameters
+4. Process the results to continue a task
+
+### MCP Architecture in Our Project
+
+Our MCP implementation consists of several components:
+
+#### 1. Server Components
+
+- **HTTP Server** (`src/core/mcp/http-server.ts`): Exposes MCP endpoints over HTTP
+- **StdIO Server** (`src/core/mcp/server.ts`): Provides MCP over standard input/output streams
+- **Handler System** (`src/core/mcp/handlers.ts`): Processes tool calls and returns results
+- **Schema Registry** (`src/core/mcp/toolSchemas.ts`): Centralizes tool definitions
+
+#### 2. MCP Endpoints
+
+Our server exposes the following MCP endpoints:
+
+- **`/.well-known/mcp/manifest.json`**: Discovery endpoint for client tools
+- **`/mcp`**: Main JSON-RPC endpoint for MCP requests
+- **`/health`**: Health check endpoint
+
+#### 3. Supported Methods
+
+The MCP server supports the following JSON-RPC methods:
+
+- **`initialize`**: Establish an MCP session
+- **`initialized`**: Confirm initialization is complete
+- **`tools/list`**: List all available browser automation tools
+- **`tools/describe`**: Get detailed schema for a specific tool
+- **`tools/call`**: Execute a browser automation tool
+
+#### 4. Available Tools
+
+The following browser automation tools are available via MCP:
+
+- **`navigate`**: Navigate to a URL
+- **`click`**: Click an element on the page
+- **`input`**: Enter text into an input field
+- **`scroll`**: Scroll the page up or down
+- **`notes`**: Add or read session notes
+- **`getPageInfo`**: Get information about the current page
+- **`setGoal`**: Set the automation goal
+
+### Testing MCP Integration
+
+You can test the MCP server using the provided test script:
+
+```bash
+./test_mcp_http.sh
+```
+
+This script performs a series of MCP requests to verify functionality, including:
+
+1. Server health check
+2. Protocol initialization
+3. Tool discovery
+4. Tool execution (navigate, click, etc.)
+5. Schema validation
+
+### Using MCP with AI Assistants
+
+AI assistants like Claude can leverage our MCP server for browser automation:
+
+1. The AI connects to our server using the MCP protocol
+2. The AI discovers available tools via `/.well-known/mcp/manifest.json` or `tools/list`
+3. The AI calls appropriate tools to automate browser interactions
+4. The AI receives structured responses to understand browser state
+
+### Example MCP Interaction
+
+Here's an example of a complete MCP interaction flow:
+
+```json
+// Client -> Server: Initialize
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {"protocolVersion": "0.1.0", "capabilities": {}}
+}
+
+// Server -> Client: Initialization Response
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "serverInfo": {"name": "agentic-browser", "version": "1.0.0"},
+    "capabilities": {"tools": {}}
+  }
+}
+
+// Client -> Server: List Available Tools
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/list",
+  "params": {}
+}
+
+// Server -> Client: Tools List Response
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "tools": [
+      {
+        "name": "navigate",
+        "description": "Navigate to a URL",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "string",
+              "description": "URL to navigate to"
+            }
+          },
+          "required": ["value"]
+        }
+      },
+      // ... other tools ...
+    ]
+  }
+}
+
+// Client -> Server: Execute Navigate Tool
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "navigate",
+    "arguments": {
+      "value": "https://en.wikipedia.org/wiki/Main_Page"
+    }
+  }
+}
+
+// Server -> Client: Navigate Result
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Successfully navigated to: https://en.wikipedia.org/wiki/Main_Page"
+      }
+    ]
+  }
+}
+```
+
+### MCP Development Guidelines
+
+When extending MCP functionality:
+
+1. **Keep Schemas Centralized**: Add new tools to `toolSchemas.ts`
+2. **Implement Handlers**: Create handler functions in `handlers.ts`
+3. **Test Thoroughly**: Update `test_mcp_http.sh` with any new tools
+4. **Follow JSON-RPC 2.0**: Ensure all responses follow the protocol
+
+### Future MCP Enhancements
+
+Planned enhancements to our MCP implementation:
+
+- **Streaming Responses**: For long-running browser operations
+- **Progress Reporting**: Better visibility into actions like page loading
+- **Tool Chaining**: Support for complex multi-step operations
+- **Authorization**: Access control for MCP endpoints
+- **Session Management**: Better handling of multiple concurrent sessions
