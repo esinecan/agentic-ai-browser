@@ -19,15 +19,17 @@
         "@google/generative-ai": "^0.22.0",
         "@langchain/langgraph": "^0.2.49",
         "@langchain/ollama": "^0.2.0",
-        "@modelcontextprotocol/sdk": "^1.8.0",
+        "@modelcontextprotocol/sdk": "^1.10.0",
         "@playwright/test": "^1.50.1",
+        "BODY-PARSER": "npm:body-parser@^2.2.0",
         "cheerio": "^1.0.0",
         "cssesc": "^3.0.0",
         "dotenv": "^16.4.7",
         "langchain": "^0.1.4",
         "node-fetch": "^2.7.0",
         "playwright": "^1.42.0",
-        "zod": "^3.21.4"
+        "zod": "^3.24.3",
+        "zod-to-json-schema": "^3.24.5"
     },
     "devDependencies": {
         "@jest/globals": "^29.6.4",
@@ -47,6 +49,7 @@
         "jest-mock": "^29.6.3",
         "ts-jest": "^29.1.2",
         "ts-node": "^10.9.2",
-        "typescript": "^5.8.2"
+        "typescript": "^5.8.2",
+        "uuidv4": "^6.2.13"
     }
 }
