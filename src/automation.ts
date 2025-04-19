@@ -13,7 +13,7 @@ import logger from './utils/logger.js';
 // Import new modular components
 import { runStateMachine, states, registerState, isRedundantAction, generateActionFeedback, shuffleArray } from './core/automation/machine.js';
 import { ContextManager } from './core/automation/context.js';
-import { checkMilestones } from './core/automation/milestones.js';
+import { checkMilestones, initializeMilestones } from './core/automation/milestones.js'; // Import initializeMilestones
 import { detectProgress, PageState } from './core/automation/progress.js';
 
 // Import action handlers from respective modules
@@ -28,12 +28,15 @@ import { notesHandler } from './core/action-handling/handlers/notesHandler.js';
 import { scrollHandler } from './core/action-handling/handlers/scrollHandler.js';
 
 // Add imports for user-defined functions
-import { 
-  processFunctionCall, 
-  isUserFunctionCall, 
+import {
+  processFunctionCall,
+  isUserFunctionCall,
   isListFunctionsRequest,
-  listAvailableFunctions 
+  listAvailableFunctions
 } from './core/user-functions/functionParser.js';
+
+// Import MCP server functions
+import { startMcp, setCtx } from "./core/mcp/server.js";
 
 // Select LLM processor based on environment variable
 let llmProcessor: LLMProcessor;
@@ -66,16 +69,17 @@ function promptUser(question: string): Promise<string> {
 // Helper function to process user function calls
 async function processUserFunctionCall(ctx: GraphContext, functionCall: string): Promise<string> {
   const expandedPrompt = await processFunctionCall(functionCall);
-  
+
   if (expandedPrompt) {
     // Ask if the user wants to replace or prepend to the current goal
+    // Fixed multiline string using template literal
     const actionChoice = await promptUser(
-      "Function detected. Do you want to:\n" +
-      "1. Replace current goal with this function\n" +
-      "2. Prepend to current goal\n" +
-      "Enter 1 or 2: "
+      `Function detected. Do you want to:
+1. Replace current goal with this function
+2. Prepend to current goal
+Enter 1 or 2: `
     );
-    
+
     if (actionChoice === "1") {
       // Replace current goal
       ctx.userGoal = expandedPrompt;
@@ -86,46 +90,47 @@ async function processUserFunctionCall(ctx: GraphContext, functionCall: string):
       });
     } else {
       // Prepend to current goal
-      ctx.userGoal = `${expandedPrompt}\n\nAdditional context: ${ctx.userGoal}`;
+      ctx.userGoal = `${expandedPrompt}
+
+Additional context: ${ctx.userGoal}`;
       ctx.history.push(`User prepended function to goal: ${functionCall}`);
       logger.info('Prepended user function to goal', {
         original: functionCall,
         newGoalPreview: ctx.userGoal.substring(0, 100) + (ctx.userGoal.length > 100 ? '...' : '')
       });
     }
-    
+
     // Reinitialize milestones for the new goal
-    const { initializeMilestones } = await import('./core/automation/milestones.js');
-    initializeMilestones(ctx);
-    
+    initializeMilestones(ctx); // Corrected: Removed duplicate import
+
     ctx.actionFeedback = `👤 FUNCTION ACTIVATED: ${functionCall} has been processed and goal updated.`;
   } else {
     // If function processing failed
     ctx.actionFeedback = `👤 FUNCTION ERROR: Failed to process "${functionCall}". Please check syntax and function name.`;
     ctx.history.push(`Failed to process function call: "${functionCall}"`);
   }
-  
+
   return "chooseAction";
 }
 
 // Extract the sendHumanMessage handler to a standalone function
 async function sendHumanMessageHandler(ctx: GraphContext): Promise<string> {
   if (!ctx.page || !ctx.action) throw new Error("Invalid context");
-  
+
   try {
     const beforeHelpState = {
       url: ctx.page.url(),
       title: await ctx.page.title()
     };
-    
+
     const screenshotDir = process.env.SCREENSHOT_DIR || "./screenshots";
     const screenshotPath = path.join(screenshotDir, `human-help-${Date.now()}.png`);
     await fs.promises.mkdir(path.dirname(screenshotPath), { recursive: true });
     await ctx.page.screenshot({ path: screenshotPath });
-    
-    const question = ctx.action.question || 
+
+    const question = ctx.action.question ||
       `I've tried ${ctx.retries} times but keep failing. The page title is "${await ctx.page.title()}". What should I try next?`;
-    
+
     let pageInfo = "";
     try {
       pageInfo = await ctx.page.evaluate(() => {
@@ -135,7 +140,8 @@ async function sendHumanMessageHandler(ctx: GraphContext): Promise<string> {
     } catch (err) {
       logger.error("Failed to extract page context", err);
     }
-    
+
+    // Fixed multiline string using template literal
     const formattedQuestion = `
 Current URL: ${ctx.page.url()}
 Current task: ${ctx.userGoal}
@@ -146,7 +152,7 @@ ${question}
 
 Tip: You can use ::functions to list available function templates.
 Your guidance:`;
-    
+
     logger.info("Asking for human help", {
       screenshot: screenshotPath,
       question,
@@ -155,22 +161,23 @@ Your guidance:`;
     });
 
     const humanResponse = await promptUser(formattedQuestion);
-    
+
     // Handle special function commands
     if (isListFunctionsRequest(humanResponse)) {
       const functionsList = await listAvailableFunctions();
       logger.info('User requested function list');
-      
+
       // Show functions and ask for further input
+      // Fixed multiline string using template literal
       const followupPrompt = `
 Available User Functions:
 
 ${functionsList}
 
 Enter a function call like ::functionName("arg1") or new instructions:`;
-      
+
       const followupResponse = await promptUser(followupPrompt);
-      
+
       if (followupResponse.trim()) {
         // Process the new input as if it was the original response
         if (isUserFunctionCall(followupResponse)) {
@@ -193,28 +200,27 @@ Enter a function call like ::functionName("arg1") or new instructions:`;
         ctx.userGoal = newGoal;
         ctx.history.push(`User updated goal to: ${newGoal}`);
         // Use the extracted initializeMilestones function from the milestones module
-        const { initializeMilestones } = await import('./core/automation/milestones.js');
-        initializeMilestones(ctx);
+        initializeMilestones(ctx); // Corrected: Removed duplicate import
       }
 
       logger.info("Received human response", {
         responsePreview: humanResponse.substring(0, 100)
       });
-      
+
       ctx.actionFeedback = `👤 HUMAN ASSISTANCE: ${humanResponse}`;
-      
+
       ctx.history.push(`Asked human: "${question.substring(0, 50)}${question.length > 50 ? '...' : ''}"`);
       ctx.history.push(`Human response: "${humanResponse.substring(0, 50)}${humanResponse.length > 50 ? '...' : ''}"`);
     }
-    
+
     const currentUrl = ctx.page.url();
     if (currentUrl !== beforeHelpState.url) {
       ctx.history.push(`Note: Page changed during human interaction from "${beforeHelpState.url}" to "${currentUrl}"`);
       ctx.retries = 0;
     }
-    
+
     ctx.retries = 0;
-    
+
     return "chooseAction";
   } catch (error) {
     logger.error("Human interaction failed", error);
@@ -253,22 +259,22 @@ registerState("start", async (ctx: GraphContext) => {
   ctx.startTime = Date.now();
   ctx.browser = await launchBrowser();
   ctx.page = await createPage(ctx.browser);
-  
+
   logger.browser.action('navigation', {
     url: ctx.page.url(),
     timestamp: Date.now()
   });
-  
+
   // Initialize tracking arrays
   ctx.successfulActions = [];
   ctx.lastActionSuccess = false;
   ctx.successCount = 0;
   ctx.previousPageState = null;
-  
+
   // Reset agent state
   const agentState = getAgentState();
   agentState.clearStop();
-  
+
   return "setupBrowser";
 });
 
@@ -276,57 +282,60 @@ registerState("chooseAction", async (ctx: GraphContext) => {
   if (!ctx.page) {
     throw new Error("No page available");
   }
-  
+
   logger.browser.action('getState', {
     url: ctx.page.url()
   });
-  
+
   // Check if this is a repeated action
   let shouldShuffleElements = false;
   if (ctx.actionHistory && ctx.actionHistory.length >= 2) {
     const lastAction = ctx.actionHistory[ctx.actionHistory.length - 1];
-    const secondLastAction = ctx.actionHistory[ctx.actionHistory.length - 2];
-    
-    // Compare actions to detect repetition
-    if (lastAction.type === secondLastAction.type && 
-        lastAction.element === secondLastAction.element) {
-      shouldShuffleElements = true;
-      logger.debug('Detected repeated action - will shuffle element ordering', {
-        action: lastAction
-      });
+    if (lastAction) { // Check if lastAction is defined
+        const secondLastAction = ctx.actionHistory[ctx.actionHistory.length - 2];
+        if (secondLastAction) { // Check if secondLastAction is defined
+          // Compare actions to detect repetition
+          if (lastAction.type === secondLastAction.type &&
+              lastAction.element === secondLastAction.element) {
+            shouldShuffleElements = true;
+            logger.debug('Detected repeated action - will shuffle element ordering', {
+              action: lastAction
+            });
+          }
+        }
     }
   }
-  
+
   try {
     const { PageAnalyzer } = await import("./core/page/analyzer.js");
     const domSnapshot = await PageAnalyzer.extractSnapshot(ctx.page);
-    
+
     // Shuffle elements if needed to break repetition pattern
     if (shouldShuffleElements && domSnapshot.elements) {
       // Shuffle buttons
       if (domSnapshot.elements.buttons && domSnapshot.elements.buttons.length > 1) {
         domSnapshot.elements.buttons = shuffleArray([...domSnapshot.elements.buttons]);
       }
-      
+
       // Shuffle links
       if (domSnapshot.elements.links && domSnapshot.elements.links.length > 1) {
         domSnapshot.elements.links = shuffleArray([...domSnapshot.elements.links]);
       }
-      
+
       // Shuffle inputs
       if (domSnapshot.elements.inputs && domSnapshot.elements.inputs.length > 1) {
         domSnapshot.elements.inputs = shuffleArray([...domSnapshot.elements.inputs]);
       }
     }
-    
+
     // Get page state
     const stateSnapshot = await getPageState(ctx.page);
-  
+
     // Store state and update progress
     const agentState = getAgentState();
     agentState.setLastValidState(stateSnapshot);
     ctx.compressedHistory = compressHistory(ctx.history);
-    
+
     // Use the extracted functions from our new modules
     // Cast stateSnapshot to PageState type to satisfy TypeScript
     detectProgress(ctx, ctx.previousPageState, stateSnapshot as PageState);
@@ -345,15 +354,17 @@ registerState("chooseAction", async (ctx: GraphContext) => {
         const domain = new URL(ctx.page.url()).hostname;
         const successPatternsInstance = new SuccessPatterns();
         const domainSuggestions = successPatternsInstance.getSuggestionsForDomain(domain);
-        
+
         if (domainSuggestions.length > 0) {
           logger.debug('Success pattern suggestions', {
             domain,
             suggestions: domainSuggestions
           });
-          
-          const suggestions = `💡 Tips based on previous successes:\n${domainSuggestions.join('\n')}`;
-          ctx.actionFeedback = ctx.actionFeedback 
+
+          // Fixed multiline string using template literal
+          const suggestions = `💡 Tips based on previous successes:
+${domainSuggestions.join('\n')}`;
+          ctx.actionFeedback = ctx.actionFeedback
             ? ctx.actionFeedback + '\n\n' + suggestions
             : suggestions;
         }
@@ -363,28 +374,28 @@ registerState("chooseAction", async (ctx: GraphContext) => {
     }
 
     const action = await llmProcessor.generateNextAction(stateSnapshot, ctx);
-    
+
     if (!action) {
       logger.error('Failed to generate valid action');
       return "handleFailure";
     }
 
     logger.browser.action('nextAction', action);
-    
+
     // Smart triggering for human help
     if (ctx.retries && ctx.retries >= 2) {
       const shouldSendHumanMessage = Math.random() < 0.7;
-      
+
       if (shouldSendHumanMessage) {
         const failedActionType = ctx.actionHistory?.[ctx.actionHistory.length - 1]?.type || 'action';
-        
+
         logger.info('Switching to human help', {
           retries: ctx.retries,
           lastFailedAction: failedActionType
         });
-        
+
         ctx.action = createSendHumanMessageAction(`I've tried ${ctx.retries} times to ${failedActionType} but keep failing. The page title is "${await ctx.page.title()}". What should I try next?`);
-        
+
         return "sendHumanMessage";
       }
     }
@@ -456,16 +467,17 @@ registerState("setupBrowser", async (ctx: GraphContext) => {
   if (!ctx.page) {
     throw new Error("No page available");
   }
-  
+
   const url = ctx.page.url();
   const title = await ctx.page.title();
-  
+
   logger.info('Browser opened, waiting for user to complete setup', {
     url,
     title
   });
-  
+
   // Prompt user to continue when ready
+  // Fixed multiline string using template literal
   const userInput = await promptUser(`
 Browser is now open at: ${url}
 
@@ -475,13 +487,13 @@ You can now:
 - Set up anything else required before automation begins
 
 Press Enter when you're ready to continue automation, or type 'exit' to quit: `);
-  
+
   // Check if user wants to exit
   if (userInput.toLowerCase() === 'exit') {
     logger.info('User requested to exit after browser launch');
     return "terminate";
   }
-  
+
   logger.info('User completed setup, continuing with automation');
   return "chooseAction";
 });
@@ -495,20 +507,21 @@ export { states };
 // Exported function to run the entire automation graph.
 export async function runGraph(): Promise<void> {
   // Prompt the user for their automation goal
-  const userGoalPrompt = "Please enter your goal for this automation:\n" +
-    "(Tip: You can use ::functions to list available function templates)";
+  // Fixed multiline string using template literal
+  const userGoalPrompt = `Please enter your goal for this automation:
+(Tip: You can use ::functions to list available function templates)`;
   const userGoal = await promptUser(userGoalPrompt);
-  
+
   // Check for special commands
   if (isListFunctionsRequest(userGoal)) {
     const functionsList = await listAvailableFunctions();
-    console.log("\nAvailable User Functions:\n");
+    console.log("\nAvailable User Functions:\n"); // Fixed newline escape
     console.log(functionsList);
-    console.log("\n");
+    console.log("\n"); // Fixed newline escape
     // Ask again after showing functions
     return runGraph();
   }
-  
+
   // Process initial goal for function calls
   let processedGoal = userGoal;
   if (isUserFunctionCall(userGoal)) {
@@ -519,14 +532,14 @@ export async function runGraph(): Promise<void> {
         original: userGoal,
         expandedPreview: expandedGoal.substring(0, 100) + (expandedGoal.length > 100 ? '...' : '')
       });
-      console.log("\nFunction expanded successfully!\n");
+      console.log("\nFunction expanded successfully!\n"); // Fixed newline escape
     } else {
-      console.log("\nFunction processing failed. Using original input.\n");
+      console.log("\nFunction processing failed. Using original input.\n"); // Fixed newline escape
     }
   }
-  
+
   // Initialize context with user goal and history
-  const ctx: GraphContext = { 
+  const ctx: GraphContext = {
     history: [],
     userGoal: processedGoal,
     successfulActions: [],
@@ -535,7 +548,13 @@ export async function runGraph(): Promise<void> {
     milestones: [],
     recognizedMilestones: []
   };
-  
+
+  // --- MCP Integration Point ---
+  // Start the MCP server *before* running the state machine
+  // It runs in the background and uses setCtx to get context updates
+  startMcp().catch(e => logger.error("MCP server failed to start", e));
+  // The initial setCtx(ctx) will happen inside runStateMachine after context initialization.
+
   // Use the extracted runStateMachine function
   await runStateMachine(ctx);
 }

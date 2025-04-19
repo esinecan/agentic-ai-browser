@@ -4,6 +4,7 @@ import { getAgentState } from '../../utils/agentState.js';
 import { ContextManager } from './context.js';
 import { checkMilestones } from './milestones.js';
 import { detectProgress } from './progress.js';
+import { setCtx } from '../mcp/server.js'; // Import setCtx
 
 // Type definition for state handlers
 export type StateHandler = (ctx: GraphContext) => Promise<string>;
@@ -31,11 +32,17 @@ export async function runStateMachine(ctx: GraphContext): Promise<void> {
   const contextManager = new ContextManager();
   ctx = contextManager.initializeContext(ctx);
 
+  // Set the initial context for MCP server
+  setCtx(ctx);
+
   let currentState: string = "start";
   let totalActionCount = 0;
   let successActionCount = 0;
 
   while (currentState !== "terminated") {
+    // Update MCP context reference at the beginning of each loop iteration
+    setCtx(ctx);
+
     const handler = states[currentState];
     if (!handler) {
       logger.error(`Unknown state: ${currentState}`, {
@@ -62,6 +69,9 @@ export async function runStateMachine(ctx: GraphContext): Promise<void> {
       
       // Execute the state handler and get the next state
       currentState = await handler(ctx);
+
+      // Update MCP context again *after* handler execution, as the handler might modify it
+      setCtx(ctx);
       
       // Check if the agent has been requested to stop
       const agentState = getAgentState();
@@ -71,7 +81,7 @@ export async function runStateMachine(ctx: GraphContext): Promise<void> {
       }
       
     } catch (error) {
-      logger.error(`Error in state "${currentState}"`, error);
+      logger.error(`Error in state "${currentState}"`, { error: error instanceof Error ? error.message : String(error) });
       currentState = "handleFailure";
     }
   }
@@ -91,7 +101,7 @@ export async function runStateMachine(ctx: GraphContext): Promise<void> {
 
 // Function to check if an action is redundant/repeated
 export function isRedundantAction(currentAction: Action, history: Action[]): boolean {
-  if (history.length < 2) return false;
+  if (!currentAction || !history || history.length < 2) return false;
   
   // Get the last few actions for comparison
   const recentActions = history.slice(-MAX_REPEATED_ACTIONS);
@@ -100,6 +110,8 @@ export function isRedundantAction(currentAction: Action, history: Action[]): boo
   let similarActionCount = 0;
   
   for (const pastAction of recentActions) {
+    if (!pastAction) continue; // Skip null/undefined actions
+
     if (pastAction.type === currentAction.type) {
       // For click, check if targeting the same element
       if (currentAction.type === 'click' && 
@@ -116,6 +128,10 @@ export function isRedundantAction(currentAction: Action, history: Action[]): boo
       else if (currentAction.type === 'navigate' && pastAction.value === currentAction.value) {
         similarActionCount++;
       }
+      // For scroll, check direction
+      else if (currentAction.type === 'scroll' && pastAction.direction === currentAction.direction) {
+         similarActionCount++;
+      }
       // For wait, consider it repeated if just repeated waits
       else if (currentAction.type === 'wait') {
         similarActionCount++;
@@ -124,6 +140,7 @@ export function isRedundantAction(currentAction: Action, history: Action[]): boo
   }
   
   // If we've seen very similar actions multiple times in a row, consider it redundant
+  // We check for >= MAX_REPEATED_ACTIONS - 1 because the current action is already counted
   return similarActionCount >= MAX_REPEATED_ACTIONS - 1;
 }
 
@@ -132,28 +149,41 @@ export function generateActionFeedback(ctx: GraphContext): string {
   if (!ctx.actionHistory || ctx.actionHistory.length < 2) return "";
   
   const lastAction = ctx.actionHistory[ctx.actionHistory.length - 1];
+  if (!lastAction) return ""; // Handle case where last action might be undefined
+  
   const previousActions = ctx.actionHistory.slice(-MAX_REPEATED_ACTIONS);
   
   // Check for repeated actions
   if (isRedundantAction(lastAction, previousActions)) {
+    let feedback = `NOTICE: You seem to be repeating the same "${lastAction.type}" action. `; 
     // Build a specific feedback message based on the action type
     if (lastAction.type === 'click') {
-      return `NOTICE: You've repeatedly tried to click "${lastAction.element}" without success. Try a different element or action type.`;
+      feedback += `You've repeatedly tried to click "${lastAction.element}" without visible progress. Try a different element or action type.`;
     }
     else if (lastAction.type === 'input') {
-      return `NOTICE: You've repeatedly tried to input "${lastAction.value}" into "${lastAction.element}". Try a different field or value.`;
+      feedback += `You've repeatedly tried to input "${lastAction.value}" into "${lastAction.element}". Try a different field or value.`;
     }
     else if (lastAction.type === 'navigate') {
-      return `NOTICE: You've repeatedly tried to navigate to "${lastAction.value}". Try a different URL or action type.`;
+      feedback += `You've repeatedly tried to navigate to "${lastAction.value}". Try a different URL or action type.`;
+    }
+    else if (lastAction.type === 'scroll') {
+      feedback += `You've repeatedly scrolled ${lastAction.direction || 'down'}. Consider if there's a more direct way to find the information.`;
     }
     else if (lastAction.type === 'wait') {
-      return `NOTICE: You've used multiple wait actions in succession. Try a more productive action now.`;
+      feedback += `You've used multiple wait actions in succession. Try a more productive action now.`;
     }
-    
-    return `NOTICE: You seem to be repeating the same "${lastAction.type}" action. Please try something different.`;
+    else {
+      feedback += `Please try something different.`;
+    }
+    return feedback;
   }
   
-  return "";
+  // Check for recent failure
+  if (ctx.lastActionSuccess === false) {
+      return `NOTICE: The last action (${lastAction.type}) failed. Consider why it might have failed and try a different approach. ${ctx.actionFeedback || ''}`;
+  }
+
+  return ctx.actionFeedback || ""; // Return general feedback if available
 }
 
 /**

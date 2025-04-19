@@ -37,6 +37,8 @@ export const ActionSchema = z.object({
   operation: z.enum(["add", "read"]).optional(),
   note: z.string().optional(),
   direction: z.enum(["up", "down"]).optional(),
+  // Add amount for scroll
+  amount: z.number().optional(),
 });
 export type Action = z.infer<typeof ActionSchema>;
 
