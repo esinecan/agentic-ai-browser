@@ -33,5 +33,7 @@ notes/
 
 # Temporary files
 tmp/
+chrome-profile/
+user-data/
 *.tmp
 *.bak
