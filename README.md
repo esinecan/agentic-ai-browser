@@ -10,7 +10,7 @@ The Agentic AI Browser project represents a fundamental shift away from the "big
 
 ## Quick Start & Documentation
 
-Ready to try the Agentic AI Browser? See the [Developer's Guide](DEVELOPERS-GUIDE.md) for complete setup instructions, configuration options, and detailed documentation.
+Ready to try the Agentic AI Browser? See the [Developer's Guide](DEVELOPERS-GUIDE.md) for complete setup instructions, configuration options, and detailed documentation. A more detailed discussion of the project can be found in the [Project Paper](https://app.readytensor.ai/publications/adaptive-autonomous-ai-co-browser-xaHHBdNBf7sr)
 
 ## 1. Behavioral Caching: Success Patterns Over Repeated Computation
 
