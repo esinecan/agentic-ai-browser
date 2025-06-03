@@ -4,6 +4,8 @@
 
 [![Demo Video](https://i.ytimg.com/vi/q85f3yhZG80/hqdefault.jpg)](https://www.youtube.com/watch?v=q85f3yhZG80)
 
+*(For full PC automation see my brand new RAG + MCP LLM client [skynet-agent](https://github.com/esinecan/skynet-agent))*
+
 ## Introduction
 
 The Agentic AI Browser project represents a fundamental shift away from the "bigger is better" paradigm dominating AI development today. Rather than relying on ever-increasing model sizes and computational resources, this browser automation system embodies a set of design principles that prioritize efficiency, resilience, and practical effectiveness. By implementing thoughtful architectural choices instead of brute-force approaches, it demonstrates how smaller models can achieve remarkable results through better system design.
