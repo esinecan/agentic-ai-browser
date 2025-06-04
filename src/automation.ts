@@ -1,7 +1,4 @@
 import { launchBrowser, createPage, getPageState, verifyAction, GraphContext, compressHistory, verifyElementExists, Action } from "./browserExecutor.js";
-import { ollamaProcessor } from "./core/llm/llmProcessorOllama.js";
-import { geminiProcessor } from "./core/llm/llmProcessorGemini.js";
-import { openaiProcessor } from "./core/llm/llmProcessorOpenAI.js";
 import { LLMProcessor } from './core/llm/llmProcessor.js';
 import readline from 'readline';
 import fs from 'fs';
@@ -35,18 +32,34 @@ import {
   listAvailableFunctions 
 } from './core/user-functions/functionParser.js';
 
-// Select LLM processor based on environment variable
-let llmProcessor: LLMProcessor;
-switch(process.env.LLM_PROVIDER?.toLowerCase()) {
-  case 'gemini':
-    llmProcessor = geminiProcessor;
-    break;
-  case 'openai':
-    llmProcessor = openaiProcessor;
-    break;
-  default:
-    llmProcessor = ollamaProcessor;
+// Lazy initialization of LLM processor
+let llmProcessor: LLMProcessor | null = null;
+
+async function getLLMProcessor(): Promise<LLMProcessor> {
+  if (llmProcessor) return llmProcessor;
+  
+  switch(process.env.LLM_PROVIDER?.toLowerCase()) {
+    case 'gemini':
+      const { geminiProcessor } = await import("./core/llm/llmProcessorGemini.js");
+      llmProcessor = geminiProcessor;
+      break;
+    case 'openai':
+      const { openaiProcessor } = await import("./core/llm/llmProcessorOpenAI.js");
+      llmProcessor = openaiProcessor;
+      break;
+    default:
+      const { ollamaProcessor } = await import("./core/llm/llmProcessorOllama.js");
+      llmProcessor = ollamaProcessor;
+  }
+  
+  return llmProcessor;
 }
+
+// Store active readline interface for cleanup
+let activeReadline: readline.Interface | null = null;
+
+// Store global context for cleanup
+let globalContext: GraphContext | null = null;
 
 // Create readline interface for user input
 function promptUser(question: string): Promise<string> {
@@ -55,10 +68,27 @@ function promptUser(question: string): Promise<string> {
     output: process.stdout
   });
 
+  activeReadline = rl;
+
   return new Promise((resolve) => {
+    let isResolved = false;
+    
     rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer);
+      if (!isResolved) {
+        isResolved = true;
+        activeReadline = null;
+        rl.close();
+        resolve(answer);
+      }
+    });
+    
+    // Handle readline being closed externally (e.g., by Ctrl+C)
+    rl.on('close', () => {
+      if (!isResolved) {
+        isResolved = true;
+        activeReadline = null;
+        resolve('exit'); // Return 'exit' when readline is closed
+      }
     });
   });
 }
@@ -362,7 +392,8 @@ registerState("chooseAction", async (ctx: GraphContext) => {
       }
     }
 
-    const action = await llmProcessor.generateNextAction(stateSnapshot, ctx);
+    const processor = await getLLMProcessor();
+    const action = await processor.generateNextAction(stateSnapshot, ctx);
     
     if (!action) {
       logger.error('Failed to generate valid action');
@@ -499,6 +530,12 @@ export async function runGraph(): Promise<void> {
     "(Tip: You can use ::functions to list available function templates)";
   const userGoal = await promptUser(userGoalPrompt);
   
+  // Check if user wants to exit (e.g., from Ctrl+C)
+  if (userGoal === 'exit') {
+    logger.info('User requested exit during goal prompt');
+    return;
+  }
+  
   // Check for special commands
   if (isListFunctionsRequest(userGoal)) {
     const functionsList = await listAvailableFunctions();
@@ -536,8 +573,16 @@ export async function runGraph(): Promise<void> {
     recognizedMilestones: []
   };
   
-  // Use the extracted runStateMachine function
-  await runStateMachine(ctx);
+  // Store context globally for cleanup
+  globalContext = ctx;
+  
+  try {
+    // Use the extracted runStateMachine function
+    await runStateMachine(ctx);
+  } finally {
+    // Clear global context
+    globalContext = null;
+  }
 }
 
 // Add a new exported function to force stop the agent
@@ -545,4 +590,20 @@ export async function stopAgent(): Promise<void> {
   const agentState = getAgentState();
   agentState.requestStop();
   console.log("Stop request has been registered");
+  
+  // Close active readline if it exists
+  if (activeReadline) {
+    activeReadline.close();
+    activeReadline = null;
+  }
+  
+  // Close browser if it exists
+  if (globalContext?.browser) {
+    try {
+      await globalContext.browser.close();
+      logger.info('Browser closed during shutdown');
+    } catch (error) {
+      logger.error('Error closing browser during shutdown', error);
+    }
+  }
 }

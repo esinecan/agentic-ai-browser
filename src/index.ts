@@ -2,7 +2,6 @@ import './utils/logger.js';
 import dotenv from "dotenv";
 import { runGraph, stopAgent } from "./automation.js";
 import { Page } from "playwright";
-import readline from 'readline';
 import logger from './utils/logger.js';
 import { getAgentState } from './utils/agentState.js';
 
@@ -39,28 +38,6 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
-// Create a readline interface for handling keypress events
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
-
-// Setup keypress event handling
-readline.emitKeypressEvents(process.stdin);
-if (process.stdin.isTTY) process.stdin.setRawMode(true);
-
-// Add keyboard shortcuts
-process.stdin.on('keypress', (str, key) => {
-  // Exit on Ctrl+C
-  if (key.ctrl && key.name === 'c') {
-    process.exit();
-  }
-});
-
-// Enable keypress events
-if (process.stdin.isTTY) {
-  process.stdin.setRawMode(true);
-}
 
 // Main execution
 (async () => {
@@ -73,7 +50,6 @@ if (process.stdin.isTTY) {
     process.exit(1);
   } finally {
     //logger.close();
-    //rl.close();
   }
 })();
 
