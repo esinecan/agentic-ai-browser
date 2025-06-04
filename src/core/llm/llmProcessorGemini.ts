@@ -6,12 +6,6 @@ import logger from '../../utils/logger.js';
 dotenv.config();
 
 const MODEL = process.env.LLM_MODEL || "gemini-2.0-flash-lite";
-const API_KEY = process.env.GEMINI_API_KEY;
-
-if (!API_KEY) {
-  logger.error('GEMINI_API_KEY is not defined. Please set it in the environment variables.');
-  throw new Error("GEMINI_API_KEY is not defined. Please set it in the environment variables.");
-}
 
 // Define JSON schema for responses
 const RESPONSE_SCHEMA = {
@@ -62,7 +56,12 @@ class GeminiProcessor extends BaseLLMProcessor {
 
   constructor() {
     super();
-    this.genAI = new GoogleGenerativeAI(API_KEY as string);
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      logger.error('GEMINI_API_KEY is not defined. Please set it in the environment variables.');
+      throw new Error("GEMINI_API_KEY is not defined. Please set it in the environment variables.");
+    }
+    this.genAI = new GoogleGenerativeAI(apiKey);
     this.model = this.genAI.getGenerativeModel({
       model: MODEL,
       systemInstruction: this.getSystemPrompt(), // Use the system prompt from base class
